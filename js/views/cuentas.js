@@ -15,6 +15,7 @@ import { kpiCard } from '../components/kpi-card.js';
 import { createEquity, createBar } from '../components/charts.js';
 import { renderPills } from '../components/pills.js';
 import { MONTHS_ES_SHORT } from '../utils/date-helpers.js';
+import { EDITION } from '../edition.js';
 
 let filterStatus = 'all';
 let filterFase = 'all';
@@ -72,7 +73,7 @@ function render(container) {
         <div class="sub">${byType.length} cuenta${byType.length !== 1 ? 's' : ''} · ${activas} activa${activas !== 1 ? 's' : ''}</div>
       </div>
       <div class="page-actions">
-        <div class="type-tabs" id="typeTabs"></div>
+        ${EDITION.cuentaTipos.length > 1 ? '<div class="type-tabs" id="typeTabs"></div>' : ''}
         <button class="btn" id="newPropiaBtn" title="Cuenta con tu propio dinero en un broker (no es de prop firm)">+ Capital propio</button>
         <button class="btn primary" id="newCuentaBtn">+ Nueva cuenta</button>
       </div>

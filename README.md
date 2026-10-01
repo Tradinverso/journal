@@ -1,6 +1,32 @@
-# Tradinverso · Trading Journal
+# Tradinverso · Nasdaq Journal
 
-SPA local de trading journal y dashboard para David Rosell y la academia Tradinverso.
+Este repositorio es la **app Nasdaq** de Tradinverso, publicada en
+`https://journal.tradinverso.com` (archivo `CNAME`). Es una sola versión: no hay
+copia de pruebas ni de producción aparte.
+
+Usa el **mismo código** que el Trading Journal completo (`app.tradinverso.com`).
+Lo que cambia entre los dos productos está en `js/edition.js`, y la edición se
+decide por la web desde la que se abre:
+
+| | Completo (`app.tradinverso.com`) | Nasdaq (`journal.tradinverso.com`) |
+|---|---|---|
+| Estrategias | Zonas, Liquidez y Nasdaq | Solo Nasdaq |
+| Cuentas | CFD y Futuros | Solo Futuros |
+| Contabilidad | Sí | No |
+| Psicotrading | Reflexiones, Meditaciones y Protocolos | Reflexiones y Protocolos (lista propia en `protocolos-fijos.js`) |
+| Logo e iconos | `assets/` | `assets/nasdaq/` |
+
+En local (`localhost`), la edición se elige con `?edicion=nasdaq` o
+`?edicion=completo` en la URL y se recuerda en ese navegador. El proyecto de
+Firebase también va por web (`js/firebase.js`): `journal.tradinverso.com` usa el
+suyo y el servidor local usa el de pruebas.
+
+Los datos no cambian de formato entre ediciones: un alumno se puede pasar del
+Nasdaq al completo exportando su backup e importándolo allí.
+
+---
+
+SPA de trading journal y dashboard para David Rosell y la academia Tradinverso.
 
 Reemplaza el dashboard estático `v17.html` con una app completa de:
 - Dashboard con KPIs, equity, mensual, por estrategia, timing, heatmap, rachas y duración

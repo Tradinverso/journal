@@ -9,6 +9,7 @@ import { sync } from './sync.js';
 import { auth } from './auth.js';
 import { convertTradesTz, DEFAULT_TZ } from './utils/timezone.js';
 import { unidadesRotacion, unidadActiva } from './utils/futures-risk.js';
+import { CUENTA_TIPO_DEFAULT, hasCuentaTipo } from './edition.js';
 
 const SENS_VALID = new Set([
   'Seguro - Confiado',
@@ -199,7 +200,8 @@ function sanitizeCuenta(c) {
   return {
     id: c.id || uuid(),
     empresa: String(c.empresa || '').trim(),
-    tipo: c.tipo === 'Futuros' ? 'Futuros' : 'CFD',
+    // Sin tipo válido → el de la edición (CFD en la completa, Futuros en Nasdaq).
+    tipo: c.tipo === 'Futuros' || c.tipo === 'CFD' ? c.tipo : CUENTA_TIPO_DEFAULT,
     numero: String(c.numero || '').trim(),
     capital,
     initialBalance,
@@ -829,6 +831,8 @@ export const state = {
   // activada para CFD, Futuros o ambos (riskTipos, por defecto ambos). Manda
   // sobre pestañas, rutas y rotación.
   riesgoActivo(tipo) {
+    // La edición Nasdaq no tiene CFD: su riesgo nunca está activo.
+    if (!hasCuentaTipo(tipo)) return false;
     const cfg = this.config || {};
     if (cfg.riskModuleEnabled === false) return false;
     const t = cfg.riskTipos || 'ambos';

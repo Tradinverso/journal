@@ -21,8 +21,14 @@ import { CHECKLIST_ITEMS, currentChecklistKey, dailyChecklistKey, checklistCompl
 import {
   newPeriod, monthsOf, inPeriod, clampPeriod, periodHtml, wirePeriod, prevPeriod,
 } from '../components/period-filter.js';
+import { SHEETS, MULTI_SHEET, hasSheet } from '../edition.js';
+import { STRATEGIES } from '../utils/strategy-config.js';
 
 const STRAT_LABELS = { ZONAS: 'Forex + Oro', LIQUIDEZ: 'EUR/USD', NASDAQ: 'NQ Futuros' };
+const STRAT_CLS = { ZONAS: 'zonas', LIQUIDEZ: 'liquidez', NASDAQ: 'nasdaq' };
+// Con una sola estrategia (edición Nasdaq), "Global" y "Nasdaq" son lo mismo:
+// sobran las tarjetas por estrategia, la tabla de pares (siempre NQ) y las
+// columnas duplicadas.
 
 let dashPeriod = newPeriod();   // rango de meses { from, to }
 let perfMode = 'sistema'; // 'sistema' | 'real'
@@ -80,7 +86,7 @@ function render(container) {
     if (!container.querySelector('#equityChart')) return; // la vista cambió
     paintEquity(container, filtered);
     paintMonthly(container, allTrades);
-    ['ZONAS', 'LIQUIDEZ', 'NASDAQ'].forEach(s => paintStrategy(container, s, filtered));
+    if (MULTI_SHEET) SHEETS.forEach(s => paintStrategy(container, s, filtered));
     paintTiming(container, filtered);
     paintDirectionAndPairs(container, filtered);
   });
@@ -220,14 +226,12 @@ function renderShell(allTrades, filtered) {
         <div class="card-head">
           <div>
             <div class="card-title">Curva de equity (P&L acumulado)</div>
-            <div class="card-sub">Por estrategia · ${perfMode === 'real' ? 'P&L real (riesgo aplicado)' : 'Sistema 1R normalizado'}</div>
+            <div class="card-sub">${MULTI_SHEET ? 'Por estrategia · ' : ''}${perfMode === 'real' ? 'P&L real (riesgo aplicado)' : 'Sistema 1R normalizado'}</div>
           </div>
-          <div style="display:flex;gap:6px;">
+          ${MULTI_SHEET ? `<div style="display:flex;gap:6px;">
             <span class="strat-pill global">Global</span>
-            <span class="strat-pill zonas">Zonas</span>
-            <span class="strat-pill liquidez">Liquidez</span>
-            <span class="strat-pill nasdaq">Nasdaq</span>
-          </div>
+            ${SHEETS.map(k => `<span class="strat-pill ${STRAT_CLS[k]}">${STRATEGIES[k].label}</span>`).join('')}
+          </div>` : ''}
         </div>
         <div class="chart-wrap" style="height:300px;"><canvas id="equityChart"></canvas></div>
       </div>
@@ -238,10 +242,10 @@ function renderShell(allTrades, filtered) {
       </div>
     </div>
 
-    <div class="section-title">Por estrategia</div>
+    ${MULTI_SHEET ? `<div class="section-title">Por estrategia</div>
     <div class="grid-3" id="stratGrid">
-      ${['ZONAS', 'LIQUIDEZ', 'NASDAQ'].map(s => stratCardShell(s)).join('')}
-    </div>
+      ${SHEETS.map(s => stratCardShell(s)).join('')}
+    </div>` : ''}
 
     <div class="section-title">Timing</div>
     <div class="grid-2">
@@ -264,48 +268,43 @@ function renderShell(allTrades, filtered) {
       <div id="heatmap" style="margin-top:14px;"></div>
     </div>
 
-    <div class="section-title">Dirección y pares</div>
-    <div class="grid-2">
+    <div class="section-title">${MULTI_SHEET ? 'Dirección y pares' : 'Dirección'}</div>
+    <div ${MULTI_SHEET ? 'class="grid-2"' : 'style="margin-bottom:24px;"'}>
       <div class="card">
-        <div class="card-title">Long vs Short por estrategia</div>
+        <div class="card-title">${MULTI_SHEET ? 'Long vs Short por estrategia' : 'Long vs Short'}</div>
         <div class="card-sub">Winrate según dirección</div>
         <div class="chart-wrap" style="height:200px;"><canvas id="lsChart"></canvas></div>
       </div>
-      <div class="card table-card">
+      ${MULTI_SHEET ? `<div class="card table-card">
         <div class="card-title">Rendimiento por par</div>
         <div class="card-sub">Pares con ≥1 trade</div>
         <table class="data-table"><thead><tr>
           <th>Par</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th><th>Señal</th>
         </tr></thead><tbody id="pairsTbody"></tbody></table>
-      </div>
+      </div>` : ''}
     </div>
 
     <div class="section-title">Rachas y drawdown</div>
     <div class="card table-card" style="margin-bottom:24px;">
-      <div class="card-title" style="margin-bottom:14px;">Rachas consecutivas y DD por estrategia y par</div>
+      <div class="card-title" style="margin-bottom:14px;">${MULTI_SHEET ? 'Rachas consecutivas y DD por estrategia y par' : 'Rachas consecutivas y DD'}</div>
       <table class="data-table"><thead><tr>
-        <th>Métrica</th><th>Global</th>
-        <th style="color:var(--liquidez)">Liquidez</th>
-        <th style="color:var(--nasdaq)">Nasdaq</th>
-        <th style="color:var(--zonas)">Zonas</th>
-        <th style="color:var(--pair-gbp)">GBP/USD</th>
-        <th style="color:var(--pair-eur)">EUR/USD</th>
-        <th style="color:var(--pair-gold)">XAU/USD</th>
+        <th>Métrica</th>
+        ${streakGroups([]).map(g => `<th${g.color ? ` style="color:${g.color}"` : ''}>${g.label}</th>`).join('')}
       </tr></thead><tbody id="streakTbody"></tbody></table>
     </div>
 
     <div class="section-title">Duración de trades</div>
     <div class="card table-card" style="margin-bottom:24px;">
-      <div class="card-title" style="margin-bottom:14px;">Duración media por estrategia y resultado</div>
+      <div class="card-title" style="margin-bottom:14px;">${MULTI_SHEET ? 'Duración media por estrategia y resultado' : 'Duración media por resultado'}</div>
       <table class="data-table"><thead><tr>
-        <th>Estrategia</th><th>Media</th><th>Media TP</th><th>Media SL</th><th>Máxima</th><th>Mínima</th>
+        <th>${MULTI_SHEET ? 'Estrategia' : ''}</th><th>Media</th><th>Media TP</th><th>Media SL</th><th>Máxima</th><th>Mínima</th>
       </tr></thead><tbody id="durTbody"></tbody></table>
     </div>
   `;
 }
 
 function stratCardShell(s) {
-  const cls = { ZONAS: 'zonas', LIQUIDEZ: 'liquidez', NASDAQ: 'nasdaq' }[s];
+  const cls = STRAT_CLS[s];
   return `
     <div class="card" data-strat="${s}">
       <div class="card-title">${s.charAt(0) + s.slice(1).toLowerCase()}</div>
@@ -368,11 +367,10 @@ function paintKpis(container, trades, allTrades) {
 
 function paintEquity(container, trades) {
   const curve = perfMode === 'real' ? equityCurveReal : equityCurve;
+  // Con una sola estrategia, la curva global ES la suya: una sola línea.
   const datasets = [
-    { key: 'ALL', label: 'Global', data: curve(trades) },
-    { key: 'ZONAS', label: 'Zonas', data: curve(trades.filter(t => t.sheet === 'ZONAS')) },
-    { key: 'LIQUIDEZ', label: 'Liquidez', data: curve(trades.filter(t => t.sheet === 'LIQUIDEZ')) },
-    { key: 'NASDAQ', label: 'Nasdaq', data: curve(trades.filter(t => t.sheet === 'NASDAQ')) },
+    { key: 'ALL', label: MULTI_SHEET ? 'Global' : STRATEGIES[SHEETS[0]].label, data: curve(trades) },
+    ...(MULTI_SHEET ? SHEETS.map(k => ({ key: k, label: STRATEGIES[k].label, data: curve(trades.filter(t => t.sheet === k)) })) : []),
   ];
   createEquity(container.querySelector('#equityChart'), datasets);
 }
@@ -513,11 +511,12 @@ function paintTiming(container, trades) {
 }
 
 function paintDirectionAndPairs(container, trades) {
-  const ls = ['ZONAS', 'LIQUIDEZ', 'NASDAQ'].map(sheet => ({
+  const ls = SHEETS.map(sheet => ({
     label: sheet.charAt(0) + sheet.slice(1).toLowerCase(),
     ...longVsShort(trades.filter(t => t.sheet === sheet)),
   }));
   createLongShort(container.querySelector('#lsChart'), ls);
+  if (!container.querySelector('#pairsTbody')) return;   // sin tabla de pares
 
   // Pairs table — split EUR/USD by strategy when present in both ZONAS and LIQUIDEZ
   const pairKey = t => {
@@ -551,21 +550,30 @@ function paintDirectionAndPairs(container, trades) {
   </tr>`;
 }
 
+// Columnas de la tabla de rachas: Global, cada estrategia y los pares de Zonas.
+// Con una sola estrategia, solo una columna con su nombre (sería = Global).
+function streakGroups(trades) {
+  if (!MULTI_SHEET) return [{ label: STRATEGIES[SHEETS[0]].label, color: `var(--${STRAT_CLS[SHEETS[0]]})`, trades }];
+  const zonasPair = p => trades.filter(t => t.sheet === 'ZONAS' && t.pair === p);
+  return [
+    { label: 'Global', trades },
+    ...['LIQUIDEZ', 'NASDAQ', 'ZONAS'].filter(hasSheet).map(k => ({
+      label: STRATEGIES[k].label, color: `var(--${STRAT_CLS[k]})`, trades: trades.filter(t => t.sheet === k),
+    })),
+    ...(hasSheet('ZONAS') ? [
+      { label: 'GBP/USD', color: 'var(--pair-gbp)', trades: zonasPair('GBP/USD') },
+      { label: 'EUR/USD', color: 'var(--pair-eur)', trades: zonasPair('EUR/USD') },
+      { label: 'XAU/USD', color: 'var(--pair-gold)', trades: zonasPair('XAU/USD') },
+    ] : []),
+  ];
+}
+
 function paintStreaks(container, trades) {
-  const groups = {
-    Global: trades,
-    Liquidez: trades.filter(t => t.sheet === 'LIQUIDEZ'),
-    Nasdaq: trades.filter(t => t.sheet === 'NASDAQ'),
-    Zonas: trades.filter(t => t.sheet === 'ZONAS'),
-    'GBP/USD': trades.filter(t => t.sheet === 'ZONAS' && t.pair === 'GBP/USD'),
-    'EUR/USD': trades.filter(t => t.sheet === 'ZONAS' && t.pair === 'EUR/USD'),
-    'XAU/USD': trades.filter(t => t.sheet === 'ZONAS' && t.pair === 'XAU/USD'),
-  };
-  const keys = Object.keys(groups);
-  const tpStreak = keys.map(k => maxStreak(groups[k], 'TP'));
-  const tpStreakPct = keys.map(k => bestTpStreakPnl(groups[k]));
-  const slStreak = keys.map(k => maxStreak(groups[k], 'SL'));
-  const dd = keys.map(k => maxDrawdown(groups[k]));
+  const groups = streakGroups(trades).map(g => g.trades);
+  const tpStreak = groups.map(g => maxStreak(g, 'TP'));
+  const tpStreakPct = groups.map(g => bestTpStreakPnl(g));
+  const slStreak = groups.map(g => maxStreak(g, 'SL'));
+  const dd = groups.map(g => maxDrawdown(g));
 
   const rows = [
     { label: 'Racha máx TP consecutivos', vals: tpStreak.map(v => v + ' TP'), color: 'var(--green)' },
@@ -582,11 +590,10 @@ function paintStreaks(container, trades) {
 }
 
 function paintDurations(container, trades) {
-  const rows = [
-    ['ZONAS', durationStats(trades.filter(t => t.sheet === 'ZONAS')), 'zonas'],
-    ['LIQUIDEZ', durationStats(trades.filter(t => t.sheet === 'LIQUIDEZ')), 'liquidez'],
-    ['NASDAQ', durationStats(trades.filter(t => t.sheet === 'NASDAQ')), 'nasdaq'],
-  ];
+  // Con una sola estrategia, su fila sería igual a la Global: solo la Global.
+  const rows = MULTI_SHEET
+    ? SHEETS.map(k => [k, durationStats(trades.filter(t => t.sheet === k)), STRAT_CLS[k]])
+    : [];
   const global = durationStats(trades);
   container.querySelector('#durTbody').innerHTML = rows.map(([name, d, cls]) => `
     <tr>

@@ -4,6 +4,8 @@ import { fmtPct } from '../utils/number-format-es.js';
 import { renderTradeTable } from '../components/trade-table.js';
 import { tradeRealPnl } from '../utils/calculations.js';
 import { openReflectionModal } from './psicologia.js';
+import { SHEETS, MULTI_SHEET } from '../edition.js';
+import { STRATEGIES } from '../utils/strategy-config.js';
 
 let calYear = null, calMonth = null;
 let stratFilter = 'all';
@@ -41,12 +43,10 @@ function render(container) {
         <div class="sub">P&L diario · Círculo naranja = 5+ trades en el día (sobreoperar)</div>
       </div>
       <div class="page-actions">
-        <select id="stratF" class="select">
+        ${MULTI_SHEET ? `<select id="stratF" class="select">
           <option value="all" ${stratFilter === 'all' ? 'selected' : ''}>Todas las estrategias</option>
-          <option value="ZONAS" ${stratFilter === 'ZONAS' ? 'selected' : ''}>Zonas</option>
-          <option value="LIQUIDEZ" ${stratFilter === 'LIQUIDEZ' ? 'selected' : ''}>Liquidez</option>
-          <option value="NASDAQ" ${stratFilter === 'NASDAQ' ? 'selected' : ''}>Nasdaq</option>
-        </select>
+          ${SHEETS.map(k => `<option value="${k}" ${stratFilter === k ? 'selected' : ''}>${STRATEGIES[k].label}</option>`).join('')}
+        </select>` : ''}
         <div class="cal-controls">
           <button class="cal-btn" id="prev">‹</button>
           <span class="cal-month-label">${MONTHS_ES[calMonth]} ${calYear}</span>
@@ -84,7 +84,8 @@ function render(container) {
 
   container.querySelector('#prev').addEventListener('click', () => navigate(container, -1));
   container.querySelector('#next').addEventListener('click', () => navigate(container, 1));
-  container.querySelector('#stratF').addEventListener('change', e => {
+  const stratF = container.querySelector('#stratF');
+  if (stratF) stratF.addEventListener('change', e => {
     stratFilter = e.target.value;
     selectedDay = null;
     selectedWeek = null;

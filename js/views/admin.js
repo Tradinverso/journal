@@ -4,6 +4,7 @@
 import { auth, authErrorMsg } from '../auth.js';
 import { sync } from '../sync.js';
 import { state } from '../state.js';
+import { SHEETS } from '../edition.js';
 import { router } from '../router.js';
 import { winrate, pnlPct, pnlPctReal, currentSlStreak, tradeCounts } from '../utils/calculations.js';
 import { countDangerAlerts } from '../utils/diagnostics.js';
@@ -322,7 +323,7 @@ function row(s) {
   const nAlerts = countDangerAlerts(s.trades);
 
   // WR por estrategia (solo las que tienen trades)
-  const stratBreakdown = ['ZONAS', 'LIQUIDEZ', 'NASDAQ']
+  const stratBreakdown = SHEETS
     .map(sheet => {
       const sub = s.trades.filter(t => t.sheet === sheet);
       if (!sub.length) return null;

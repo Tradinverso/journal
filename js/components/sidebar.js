@@ -3,6 +3,8 @@ import { router } from '../router.js';
 import { state } from '../state.js';
 import { auth } from '../auth.js';
 import { IS_TEST_ENV } from '../firebase.js';
+import { EDITION, SHEETS, MULTI_SHEET } from '../edition.js';
+import { STRATEGIES } from '../utils/strategy-config.js';
 import { storage } from '../storage.js';
 import { tzLabel } from '../utils/timezone.js';
 import { countDangerAlerts } from '../utils/diagnostics.js';
@@ -28,20 +30,21 @@ const NAV_BASE = [
   { section: 'Operativa' },
   { path: '#/nuevo',      label: 'Nuevo trade', icon: 'nuevo', class: '' },
   { path: '#/calendario', label: 'Calendario',  icon: 'calendario', class: '' },
-  // Las 3 estrategias son un único ítem: dentro se cambia con pestañas.
-  { path: '#/zonas', label: 'Estrategias', icon: 'zonas', class: '', match: STRATEGY_ROUTES_LIST },
+  // Las estrategias son un único ítem: dentro se cambia con pestañas. Con una
+  // sola (edición Nasdaq) el ítem lleva su nombre y va directo a ella.
+  { path: STRATEGY_ROUTES[SHEETS[0]], label: MULTI_SHEET ? 'Estrategias' : STRATEGIES[SHEETS[0]].label, icon: 'zonas', class: '', match: STRATEGY_ROUTES_LIST },
   { section: 'Análisis' },
   // dangerAlerts: badge rojo con el nº de alertas críticas del diagnóstico.
   { path: '#/diagnostico', label: 'Diagnóstico', icon: 'diagnostico', class: '', dangerAlerts: true },
-  // Backtesting agrupa las 3 estrategias como pestañas (histórico separado del journal).
-  { path: '#/bt-zonas', label: 'Backtesting', icon: 'backtest', class: '', match: BACKTEST_ROUTES_LIST },
+  // Backtesting agrupa las estrategias como pestañas (histórico separado del journal).
+  { path: BACKTEST_ROUTES[SHEETS[0]], label: 'Backtesting', icon: 'backtest', class: '', match: BACKTEST_ROUTES_LIST },
   // Psicotrading agrupa Reflexiones + Meditaciones + Protocolos (pestañas dentro).
   { path: '#/psicologia', label: 'Psicotrading', icon: 'reflexiones', class: '', match: PSICO_ROUTES_LIST },
   { path: '#/plan',        label: 'Plan de trading', icon: 'plan', class: '' },
   { section: 'Gestión' },
   // Cuentas agrupa Cuentas + Riesgo (pestañas). Contabilidad va aparte.
   { path: '#/cuentas',      label: 'Cuentas',      icon: 'cuentas', class: '', countActiveCuentas: true, match: ['#/cuentas', '#/riesgo', '#/riesgo-futuros'] },
-  { path: '#/contabilidad', label: 'Contabilidad', icon: 'contabilidad', class: '' },
+  { path: '#/contabilidad', label: 'Contabilidad', icon: 'contabilidad', class: '', hidden: !EDITION.contabilidad },
   // Ajustes (engloba Importar y Tabla como pestañas) se renderiza aparte, en el pie.
 ];
 
@@ -109,7 +112,7 @@ export function renderSidebar(container) {
   // Nuevo trade siguen visibles porque admin puede dar de alta datos a alumnos.
   // Módulo de Riesgo: visible salvo que el usuario lo haya desactivado.
   const riskOn = !(state.config && state.config.riskModuleEnabled === false);
-  let nav = NAV_BASE.filter(item => (!inViewAs || !item.hideInViewAs) && (!item.riskModule || riskOn));
+  let nav = NAV_BASE.filter(item => !item.hidden && (!inViewAs || !item.hideInViewAs) && (!item.riskModule || riskOn));
   if (auth.isAdmin()) nav = nav.concat(NAV_ADMIN);
   else if (auth.isGestor()) nav = nav.concat(NAV_GESTOR);
 
@@ -130,11 +133,11 @@ export function renderSidebar(container) {
 
   container.innerHTML = `
     <a href="${auth.isAdmin() && !inViewAs ? '#/admin' : '#/dashboard'}" class="brand" title="Tradinverso">
-      <div class="brand-logo">${icon('globo')}</div>
+      <div class="brand-logo">${EDITION.marca ? `<img src="${EDITION.marca}" alt="">` : icon('globo')}</div>
       <div class="brand-text">
         <span class="brand-line2">TRADINVERSO</span>
-        <span class="brand-line1">Trading Journal</span>
-        <span class="brand-ver">v.2.5${IS_TEST_ENV ? ' · <b style="color:var(--orange);">PRUEBAS</b>' : ''}</span>
+        <span class="brand-line1">${EDITION.nombre}</span>
+        <span class="brand-ver">${EDITION.version}${IS_TEST_ENV ? ' · <b style="color:var(--orange);">PRUEBAS</b>' : ''}</span>
       </div>
     </a>
     <div class="sidebar-tools">

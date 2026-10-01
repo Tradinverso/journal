@@ -11,6 +11,14 @@ import { TIMEZONES, tzLabel, guessTz } from '../utils/timezone.js';
 import { ajustesTabs } from '../components/ajustes-tabs.js';
 import { icon } from '../components/icons.js';
 import { renderSidebar } from '../components/sidebar.js';
+import { SHEETS, MULTI_SHEET, IS_NASDAQ, hasCuentaTipo } from '../edition.js';
+import { STRATEGIES } from '../utils/strategy-config.js';
+
+// Opciones del módulo de riesgo según los tipos de cuenta de la edición: la
+// Nasdaq (solo futuros) solo puede activarlo o desactivarlo.
+const RISK_OPTIONS = hasCuentaTipo('CFD')
+  ? [['ambos', 'CFD y Futuros'], ['CFD', 'Solo CFD'], ['Futuros', 'Solo Futuros'], ['off', 'Desactivado']]
+  : [['Futuros', 'Activado'], ['off', 'Desactivado']];
 
 export function settingsView(container) {
   const inViewAs = !!state.viewAsUid;
@@ -69,7 +77,7 @@ export function settingsView(container) {
       </div>
     </div>
 
-    <div class="section-title">Conexión con Apps Script</div>
+    ${IS_NASDAQ ? '' : `<div class="section-title">Conexión con Apps Script</div>
     <div class="card">
       <div class="setting-row">
         <div class="setting-info">
@@ -80,7 +88,7 @@ export function settingsView(container) {
           <input class="form-input" type="url" id="urlInput" value="${escapeHtml(url)}" placeholder="https://script.google.com/macros/s/.../exec">
         </div>
       </div>
-    </div>
+    </div>`}
 
     <div class="section-title">Apariencia</div>
     <div class="card">
@@ -136,11 +144,13 @@ export function settingsView(container) {
       <div class="setting-row">
         <div class="setting-info">
           <div class="setting-label">Gestión de riesgo / rotación</div>
-          <div class="setting-desc">Añade en <strong>Cuentas</strong> las pestañas de riesgo: <strong>CFD</strong> (escalado por niveles según el drawdown) y <strong>Futuros</strong> (gestiones de riesgo fijo y grupos de copiado), cada una con su rotación. Elige cuáles ver. Lee de tus cuentas y trades, no añade datos.</div>
+          <div class="setting-desc">${hasCuentaTipo('CFD')
+            ? 'Añade en <strong>Cuentas</strong> las pestañas de riesgo: <strong>CFD</strong> (escalado por niveles según el drawdown) y <strong>Futuros</strong> (gestiones de riesgo fijo y grupos de copiado), cada una con su rotación. Elige cuáles ver.'
+            : 'Añade en <strong>Cuentas</strong> la pestaña <strong>Riesgo Futuros</strong>: gestiones de riesgo fijo y grupos de copiado, con su rotación.'} Lee de tus cuentas y trades, no añade datos.</div>
         </div>
         <div class="setting-control">
           <select class="select" id="riskModuleSel">
-            ${[['ambos', 'CFD y Futuros'], ['CFD', 'Solo CFD'], ['Futuros', 'Solo Futuros'], ['off', 'Desactivado']]
+            ${RISK_OPTIONS
               .map(([v, l]) => `<option value="${v}" ${riskSelValue() === v ? 'selected' : ''}>${l}</option>`).join('')}
           </select>
         </div>
@@ -176,7 +186,9 @@ export function settingsView(container) {
         <div class="setting-info">
           <div class="setting-label">Excel completo (.xlsx)</div>
           <div class="setting-desc">
-            Archivo Excel con <strong>3 pestañas</strong> (Zonas · Liquidez · Nasdaq), cada una con sus columnas y todos tus trades.
+            ${MULTI_SHEET
+              ? `Archivo Excel con <strong>${SHEETS.length} pestañas</strong> (${SHEETS.map(k => STRATEGIES[k].label).join(' · ')}), cada una con sus columnas y todos tus trades.`
+              : 'Archivo Excel con todos tus trades y sus columnas.'}
             Se abre directamente en Excel o Google Sheets. Mismo orden de columnas que tu hoja original.
           </div>
         </div>
@@ -201,17 +213,15 @@ export function settingsView(container) {
 
     <div class="section-title">Mantenimiento</div>
     <div class="card">
-      <div class="setting-row">
+      ${MULTI_SHEET ? `<div class="setting-row">
         <div class="setting-info">
           <div class="setting-label">Borrar trades por estrategia</div>
           <div class="setting-desc">Elimina solo los trades de una estrategia. Útil para reimportar desde cero.</div>
         </div>
         <div class="setting-control" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
-          <button class="btn danger" data-wipe-sheet="ZONAS">Zonas (${countSheet('ZONAS')})</button>
-          <button class="btn danger" data-wipe-sheet="LIQUIDEZ">Liquidez (${countSheet('LIQUIDEZ')})</button>
-          <button class="btn danger" data-wipe-sheet="NASDAQ">Nasdaq (${countSheet('NASDAQ')})</button>
+          ${SHEETS.map(k => `<button class="btn danger" data-wipe-sheet="${k}">${STRATEGIES[k].label} (${countSheet(k)})</button>`).join('')}
         </div>
-      </div>
+      </div>` : ''}
 
       <div class="setting-row">
         <div class="setting-info">
@@ -303,6 +313,7 @@ export function settingsView(container) {
     state.setConfig(v === 'off' ? { riskModuleEnabled: false } : { riskModuleEnabled: true, riskTipos: v });
     flashOk(container, v === 'off' ? 'Gestión de riesgo desactivada'
       : v === 'ambos' ? 'Gestión de riesgo activada: CFD y Futuros'
+      : !hasCuentaTipo('CFD') ? 'Gestión de riesgo activada'
       : `Gestión de riesgo activada: solo ${v}`);
   });
 
@@ -473,6 +484,8 @@ function flash(container, msg, type) {
 // Valor del selector de Ajustes a partir de la config (riskModuleEnabled + riskTipos).
 function riskSelValue() {
   if (state.config.riskModuleEnabled === false) return 'off';
+  // Sin CFD en la edición, cualquier valor activo es "Futuros".
+  if (!hasCuentaTipo('CFD')) return 'Futuros';
   return state.config.riskTipos || 'ambos';
 }
 

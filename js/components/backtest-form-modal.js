@@ -9,6 +9,7 @@ import { auth } from '../auth.js';
 import { openModal } from './modal.js';
 import { renderPills } from './pills.js';
 import { STRATEGIES, modelLabel } from '../utils/strategy-config.js';
+import { SHEETS, MULTI_SHEET } from '../edition.js';
 import { todayLocal } from '../utils/timezone.js';
 import { formatDateEs, durationMinutes } from '../utils/date-helpers.js';
 import { fmtPct } from '../utils/number-format-es.js';
@@ -27,9 +28,11 @@ import { fmtPct } from '../utils/number-format-es.js';
 // de las dos direcciones (si no, un trade mal marcado se quedaría atrapado en
 // su pestaña para siempre).
 export function openBacktestFormModal(sheet, existing, onSaved, draft = null, opts = {}) {
-  const { pickSheet = false, notTaken = false } = opts;
+  const { notTaken = false } = opts;
+  // Con una sola estrategia (edición Nasdaq) no hay nada que elegir.
+  const pickSheet = !!opts.pickSheet && MULTI_SHEET;
   // Con pickSheet y sin estrategia elegida aún, se arranca por la primera.
-  const sheetActual = sheet || (draft && draft.sheet) || Object.keys(STRATEGIES)[0];
+  const sheetActual = sheet || (draft && draft.sheet) || SHEETS[0];
   sheet = sheetActual;
   const meta = STRATEGIES[sheet];
   // Modelo obligatorio en Nasdaq, salvo al editar un backtest anterior a los
@@ -264,7 +267,7 @@ export function openBacktestFormModal(sheet, existing, onSaved, draft = null, op
   if (pickSheet) {
     renderPills(root.querySelector('[data-field="sheet"]'), {
       name: 'sheet',
-      options: Object.keys(STRATEGIES).map(k => ({ value: k, label: STRATEGIES[k].label })),
+      options: SHEETS.map(k => ({ value: k, label: STRATEGIES[k].label })),
       value: sheet,
       // Cambiar de estrategia cambia par/zonas/entradas, así que hay que
       // reconstruir el formulario: se reabre con el borrador adaptado.

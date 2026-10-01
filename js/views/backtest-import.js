@@ -19,6 +19,11 @@ import { exportXlsx, stampNow, slug } from '../utils/sheet-export.js';
 import {
   fetchSheetBacktests, parseCsvFile, draftToBacktest, normalizeDate, parseNumComa, normRes,
 } from '../utils/backtest-import.js';
+import { SHEETS, MULTI_SHEET, hasSheet } from '../edition.js';
+
+// Textos que hablan de "las tres estrategias": con una sola (edición Nasdaq)
+// no se nombran.
+const DE_TODAS = MULTI_SHEET ? ' de las tres estrategias' : '';
 
 // ── Columnas de la rejilla por estrategia ──
 const COLS = {
@@ -66,12 +71,10 @@ const COLS = {
   ],
 };
 
-const SHEETS = ['ZONAS', 'LIQUIDEZ', 'NASDAQ'];
-
 // Estado del importador (a nivel de módulo: sobrevive al cambiar de pestaña
 // dentro de la sesión; se limpia al importar).
 let buckets = emptyBuckets();
-let activeSheet = 'ZONAS';
+let activeSheet = SHEETS[0];
 let lastMsg = null;   // { type: 'ok'|'err', text }
 
 function emptyBuckets() {
@@ -121,7 +124,7 @@ function paint(container) {
       <div class="card-sub">Las filas caen en la rejilla de abajo para revisarlas antes de importar. Se ignoran las columnas calculadas de la plantilla (balance, DD, rachas) y la sensación (el backtesting no lleva emociones).</div>
       <div class="bti-loaders">
         <div class="bti-loader">
-          <div class="form-label">Enlace del Google Sheet (lee las 3 pestañas)</div>
+          <div class="form-label">Enlace del Google Sheet (${MULTI_SHEET ? 'lee las 3 pestañas' : `lee la pestaña ${STRATEGIES[SHEETS[0]].label}`})</div>
           <div style="display:flex;gap:8px;">
             <input class="form-input" type="url" id="btiUrl" placeholder="https://docs.google.com/spreadsheets/d/…" style="flex:1;">
             <button class="btn primary" id="btiFetch">Cargar</button>
@@ -132,7 +135,7 @@ function paint(container) {
         <div class="bti-loader">
           <div class="form-label">Subir CSV (una pestaña por archivo)</div>
           <input class="form-input" type="file" id="btiFile" accept=".csv,text/csv" multiple>
-          <div class="bti-hint">En el Sheet: <b>Archivo → Descargar → CSV</b> de la pestaña que quieras. Detecta sola si es Zonas, Liquidez o Nasdaq.</div>
+          <div class="bti-hint">En el Sheet: <b>Archivo → Descargar → CSV</b> de la pestaña ${MULTI_SHEET ? 'que quieras. Detecta sola si es Zonas, Liquidez o Nasdaq.' : STRATEGIES[SHEETS[0]].label + '.'}</div>
         </div>
       </div>
       ${lastMsg ? `<div class="import-result ${lastMsg.type}" style="margin-top:12px;">${esc(lastMsg.text)}</div>` : ''}
@@ -142,12 +145,12 @@ function paint(container) {
       <div class="card-title">2 · Revisar y editar</div>
       <div class="card-sub">Rejilla editable: corrige celdas, o copia columnas/bloques de cualquier Excel/Sheet y pégalos en una celda — se reparten solos hacia abajo y a la derecha.</div>
 
-      <div class="rg-tabs" style="margin:12px 0;">
+      ${MULTI_SHEET ? `<div class="rg-tabs" style="margin:12px 0;">
         ${SHEETS.map(k => {
           const n = buckets[k].filter(r => !rowIsEmpty(r)).length;
           return `<button class="rg-tab ${activeSheet === k ? 'active' : ''}" data-bti-sheet="${k}">${STRATEGIES[k].label}${n ? ` (${n})` : ''}</button>`;
         }).join('')}
-      </div>
+      </div>` : '<div style="margin-top:12px;"></div>'}
 
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
         <button class="btn" id="btiAddRows">+ 10 filas</button>
@@ -175,10 +178,10 @@ function paint(container) {
 
     <div class="card" style="margin-bottom:24px;">
       <div class="card-title">3 · Importar</div>
-      <div class="card-sub">Se importan las filas válidas (✓) de las tres estrategias. Reimportar lo mismo no duplica.</div>
+      <div class="card-sub">Se importan las filas válidas (✓)${DE_TODAS}. Reimportar lo mismo no duplica.</div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;">
         <button class="btn primary" id="btiImport" ${totalValid ? '' : 'disabled'}>⬆ Importar ${totalValid} backtest${totalValid !== 1 ? 's' : ''}</button>
-        <span class="filter-count">${SHEETS.map(k => `${STRATEGIES[k].label}: ${validCount(k)}`).join(' · ')}</span>
+        ${MULTI_SHEET ? `<span class="filter-count">${SHEETS.map(k => `${STRATEGIES[k].label}: ${validCount(k)}`).join(' · ')}</span>` : ''}
       </div>
     </div>
 
@@ -188,7 +191,7 @@ function paint(container) {
         <div class="setting-info">
           <div class="setting-label">Exportar a Excel (.xlsx)</div>
           <div class="setting-desc">
-            Archivo con <strong>3 pestañas</strong> (Zonas · Liquidez · Nasdaq) y el mismo orden de columnas
+            ${MULTI_SHEET ? `Archivo con <strong>${SHEETS.length} pestañas</strong> (${SHEETS.map(k => STRATEGIES[k].label).join(' · ')}) y el` : 'Archivo con el'} mismo orden de columnas
             que la plantilla de la academia, así que se puede volver a importar tal cual.
             Solo backtests — tu journal real se exporta desde <strong>Ajustes</strong>.
           </div>
@@ -214,7 +217,7 @@ function paint(container) {
       <div class="setting-row">
         <div class="setting-info">
           <div class="setting-label">Borrar los no tomados</div>
-          <div class="setting-desc">Elimina solo los trades marcados como <strong>✗ No tomado</strong>, de las tres estrategias. El resto del backtesting no se toca.</div>
+          <div class="setting-desc">Elimina solo los trades marcados como <strong>✗ No tomado</strong>${MULTI_SHEET ? ',' : ''}${DE_TODAS}. El resto del backtesting no se toca.</div>
         </div>
         <div class="setting-control" style="display:flex;justify-content:flex-end;">
           <button class="btn danger" id="btiWipeNT" ${stored.noTomados ? '' : 'disabled'}>No tomados (${stored.noTomados})</button>
@@ -224,7 +227,7 @@ function paint(container) {
       <div class="setting-row">
         <div class="setting-info">
           <div class="setting-label">Borrar todo el backtesting</div>
-          <div class="setting-desc">Elimina los backtests de las tres estrategias. Tus trades reales no se tocan. No se puede deshacer.</div>
+          <div class="setting-desc">Elimina ${MULTI_SHEET ? 'los backtests de las tres estrategias' : 'todos los backtests'}. Tus trades reales no se tocan. No se puede deshacer.</div>
         </div>
         <div class="setting-control" style="display:flex;justify-content:flex-end;">
           <button class="btn danger" id="btiWipeAll" ${stored.total ? '' : 'disabled'}>Borrar todo (${stored.total})</button>
@@ -271,7 +274,7 @@ function wire(container) {
     }
     lastMsg = errors.length
       ? { type: total ? 'ok' : 'err', text: `${total ? `Cargadas ${total} filas. ` : ''}${errors.join(' ')}` }
-      : { type: 'ok', text: `Cargadas ${total} filas del Sheet (${SHEETS.map(k => `${STRATEGIES[k].label}: ${loaded[k].length}`).join(' · ')}). Revísalas y pulsa Importar.` };
+      : { type: 'ok', text: `Cargadas ${total} filas del Sheet${MULTI_SHEET ? ` (${SHEETS.map(k => `${STRATEGIES[k].label}: ${loaded[k].length}`).join(' · ')})` : ''}. Revísalas y pulsa Importar.` };
     paint(container);
   });
 
@@ -284,6 +287,7 @@ function wire(container) {
       const text = await f.text();
       const { sheet, drafts, error } = parseCsvFile(text);
       if (error || !sheet) { errs.push(`${f.name}: ${error || 'estrategia no reconocida'}`); continue; }
+      if (!hasSheet(sheet)) { errs.push(`${f.name}: es de ${STRATEGIES[sheet].label}, que no está en esta app`); continue; }
       buckets[sheet] = buckets[sheet].filter(r => !rowIsEmpty(r)).concat(drafts);
       activeSheet = sheet;
       total += drafts.length;
@@ -436,7 +440,7 @@ function wire(container) {
     if (!n) return;
     openModal({
       title: 'Borrar los trades no tomados',
-      body: `Vas a eliminar <strong>${n} trade${n !== 1 ? 's' : ''} no tomado${n !== 1 ? 's' : ''}</strong> de las tres estrategias.
+      body: `Vas a eliminar <strong>${n} trade${n !== 1 ? 's' : ''} no tomado${n !== 1 ? 's' : ''}</strong>${DE_TODAS}.
              El resto del backtesting y <strong>tu journal real</strong> no se tocan.
              Esta acción <strong>no se puede deshacer</strong>. ¿Continuar?`,
       actions: [
@@ -458,7 +462,7 @@ function wire(container) {
     if (!n) return;
     openModal({
       title: 'Borrar todo el backtesting',
-      body: `Vas a eliminar <strong>los ${n} backtest${n !== 1 ? 's' : ''}</strong> de las tres estrategias.
+      body: `Vas a eliminar <strong>los ${n} backtest${n !== 1 ? 's' : ''}</strong>${DE_TODAS}.
              <strong>Tus trades reales del journal no se tocan.</strong>
              Esta acción <strong>no se puede deshacer</strong>. ¿Continuar?`,
       actions: [

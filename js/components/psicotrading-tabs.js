@@ -2,9 +2,12 @@
 // Reflexiones ↔ Meditaciones ↔ Protocolos. Son enlaces de navegación (cada uno
 // es su propia ruta/vista), marcando la activa. Mismo patrón que ajustes-tabs.
 
+import { EDITION } from '../edition.js';
+
+// Meditaciones no existe en la edición Nasdaq (edition.js).
 export const PSICO_ROUTES = {
   reflexiones: '#/psicologia',
-  meditaciones: '#/meditaciones',
+  ...(EDITION.meditaciones ? { meditaciones: '#/meditaciones' } : {}),
   protocolos: '#/protocolos',
 };
 
@@ -15,7 +18,7 @@ export function psicotradingTabs(active) {
   return `
     <div class="rg-tabs gestion-tabs strat-tabs">
       ${tab('reflexiones', '🧘 Reflexiones')}
-      ${tab('meditaciones', '🎧 Meditaciones')}
+      ${PSICO_ROUTES.meditaciones ? tab('meditaciones', '🎧 Meditaciones') : ''}
       ${tab('protocolos', '📋 Protocolos')}
     </div>`;
 }

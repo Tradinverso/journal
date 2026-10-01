@@ -13,6 +13,12 @@ import { openViewTradeModal } from '../components/trade-view-modal.js';
 import { sortChrono } from '../utils/calculations.js';
 import { parseTime, durationMinutes } from '../utils/date-helpers.js';
 import { ajustesTabs } from '../components/ajustes-tabs.js';
+import { SHEETS, MULTI_SHEET } from '../edition.js';
+import { STRATEGIES } from '../utils/strategy-config.js';
+
+// Con una sola estrategia (edición Nasdaq) sobran el filtro y las columnas de
+// estrategia y par (siempre Nasdaq · NQ).
+const SHEET_COLS = MULTI_SHEET;
 
 let filterSheet = 'all';
 let filterResult = 'all';
@@ -64,12 +70,10 @@ function render(container) {
     </div>
 
     <div class="td-filters">
-      <select id="td-sheet" class="select">
+      ${SHEET_COLS ? `<select id="td-sheet" class="select">
         <option value="all" ${filterSheet === 'all' ? 'selected' : ''}>Todas las estrategias</option>
-        <option value="ZONAS" ${filterSheet === 'ZONAS' ? 'selected' : ''}>Zonas</option>
-        <option value="LIQUIDEZ" ${filterSheet === 'LIQUIDEZ' ? 'selected' : ''}>Liquidez</option>
-        <option value="NASDAQ" ${filterSheet === 'NASDAQ' ? 'selected' : ''}>Nasdaq</option>
-      </select>
+        ${SHEETS.map(k => `<option value="${k}" ${filterSheet === k ? 'selected' : ''}>${STRATEGIES[k].label}</option>`).join('')}
+      </select>` : ''}
       <select id="td-result" class="select">
         <option value="all" ${filterResult === 'all' ? 'selected' : ''}>Todos los resultados</option>
         <option value="TP" ${filterResult === 'TP' ? 'selected' : ''}>Solo TP</option>
@@ -92,8 +96,7 @@ function render(container) {
                 <th>Fecha</th>
                 <th>Apert.</th>
                 <th>Cierre</th>
-                <th>Estrategia</th>
-                <th>Par</th>
+                ${SHEET_COLS ? '<th>Estrategia</th><th>Par</th>' : ''}
                 <th>Setup</th>
                 <th>Zona</th>
                 <th>Entrada</th>
@@ -116,7 +119,8 @@ function render(container) {
   `;
 
   // Filtros
-  container.querySelector('#td-sheet').addEventListener('change', e => {
+  const sheetSel = container.querySelector('#td-sheet');
+  if (sheetSel) sheetSel.addEventListener('change', e => {
     filterSheet = e.target.value;
     render(container);
   });
@@ -161,14 +165,12 @@ function renderRow(t) {
       <td><input type="date" data-field="date" value="${escAttr(t.date)}"></td>
       <td><input type="time" data-field="open_str" value="${escAttr(t.open_str || '')}"></td>
       <td><input type="time" data-field="close_str" value="${escAttr(t.close_str || '')}"></td>
-      <td>
+      ${SHEET_COLS ? `<td>
         <select data-field="sheet">
-          <option value="ZONAS" ${t.sheet === 'ZONAS' ? 'selected' : ''}>Zonas</option>
-          <option value="LIQUIDEZ" ${t.sheet === 'LIQUIDEZ' ? 'selected' : ''}>Liquidez</option>
-          <option value="NASDAQ" ${t.sheet === 'NASDAQ' ? 'selected' : ''}>Nasdaq</option>
+          ${SHEETS.map(k => `<option value="${k}" ${t.sheet === k ? 'selected' : ''}>${STRATEGIES[k].label}</option>`).join('')}
         </select>
       </td>
-      <td><input type="text" data-field="pair" value="${escAttr(t.pair || '')}" class="td-w-80"></td>
+      <td><input type="text" data-field="pair" value="${escAttr(t.pair || '')}" class="td-w-80"></td>` : ''}
       <td>
         <select data-field="setup">
           <option value="LONG" ${t.setup === 'LONG' ? 'selected' : ''}>LONG</option>

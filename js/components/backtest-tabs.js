@@ -3,18 +3,20 @@
 // navegación, la activa con el color de su estrategia).
 
 import { STRATEGIES } from '../utils/strategy-config.js';
+import { hasSheet } from '../edition.js';
 
 // Tras las 3 estrategias van NO TOMADOS (trades que se escaparon, aparte para
 // que no contaminen la validación de cada estrategia) e IMPORTAR (rejilla para
 // volcar Sheets/CSV). Ambas están en BACKTEST_ROUTES para que el sidebar marque
 // activo el ítem "Backtesting" también en esas rutas (match usa Object.values).
-export const BACKTEST_ROUTES = {
+// Las estrategias que no tiene esta edición (edition.js) no salen.
+export const BACKTEST_ROUTES = Object.fromEntries(Object.entries({
   ZONAS: '#/bt-zonas',
   LIQUIDEZ: '#/bt-liquidez',
   NASDAQ: '#/bt-nasdaq',
   NO_TOMADOS: '#/bt-no-tomados',
   IMPORTAR: '#/bt-importar',
-};
+}).filter(([k]) => !STRATEGIES[k] || hasSheet(k)));
 
 export function backtestTabs(active) {
   return `

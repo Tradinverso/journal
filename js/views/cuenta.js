@@ -16,6 +16,7 @@ import { kpiCard } from '../components/kpi-card.js';
 import { openViewTradeModal } from '../components/trade-view-modal.js';
 import { formatDateShort, MONTHS_ES_SHORT } from '../utils/date-helpers.js';
 import { todayLocal } from '../utils/timezone.js';
+import { MULTI_SHEET } from '../edition.js';
 
 const FASE_LABEL = { challenge_1: 'Challenge 1ª', challenge_2: 'Challenge 2ª', fondeada: 'Fondeada', propia: 'Capital propio' };
 const STATUS_LABEL = { activa: 'Activa', pausada: 'Pausada', pasada: 'Pasada', perdida: 'Perdida' };
@@ -376,8 +377,7 @@ function renderAccountTradesTable(items, cuenta) {
         <thead><tr>
           <th>Fecha</th>
           <th>Hora</th>
-          <th>Estrategia</th>
-          <th>Activo</th>
+          ${MULTI_SHEET ? '<th>Estrategia</th><th>Activo</th>' : ''}
           <th>Setup</th>
           <th>Zona</th>
           <th>% sistema</th>
@@ -392,8 +392,8 @@ function renderAccountTradesTable(items, cuenta) {
             return `<tr>
               <td>${formatDateShort(t.date)}</td>
               <td>${t.open_str || '–'}</td>
-              <td><span class="strat-pill ${t.sheet === 'ZONAS' ? 'zonas' : t.sheet === 'LIQUIDEZ' ? 'liquidez' : 'nasdaq'}">${t.sheet.charAt(0) + t.sheet.slice(1).toLowerCase()}</span></td>
-              <td>${esc(t.pair || '–')}</td>
+              ${MULTI_SHEET ? `<td><span class="strat-pill ${t.sheet === 'ZONAS' ? 'zonas' : t.sheet === 'LIQUIDEZ' ? 'liquidez' : 'nasdaq'}">${t.sheet.charAt(0) + t.sheet.slice(1).toLowerCase()}</span></td>
+              <td>${esc(t.pair || '–')}</td>` : ''}
               <td>${esc(t.setup || '–')}</td>
               <td>${esc((Array.isArray(t.zone) ? t.zone.join(' · ') : t.zone) || '–')}</td>
               <td style="color:${pctColor};">${t.pnl_pct >= 0 ? '+' : ''}${t.pnl_pct.toFixed(2)}%</td>

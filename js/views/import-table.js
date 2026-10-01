@@ -6,9 +6,19 @@ import { parsePastedText } from '../utils/paste-parser.js';
 import { fetchAppsScript, mapAppsScriptTrade } from '../utils/apps-script-import.js';
 import { ajustesTabs } from '../components/ajustes-tabs.js';
 import { parseCsv, toCsv, downloadFile } from '../utils/csv.js';
+import { SHEETS, MULTI_SHEET, IS_NASDAQ, hasSheet } from '../edition.js';
 
 let activeTab = 'paste';
-let pasteSheet = 'ZONAS';
+let pasteSheet = SHEETS[0];
+
+// Solo entran trades de las estrategias de esta edición: en la Nasdaq, uno de
+// Zonas o Liquidez no saldría en ninguna vista pero sí sumaría en los totales.
+function addEdicion(trades) {
+  const ok = trades.filter(t => t && hasSheet(t.sheet));
+  const { added, dup } = state.addMany(ok);
+  return { added, dup, fuera: trades.length - ok.length };
+}
+const fueraTxt = n => n ? ` · ${n} de otras estrategias ignorados` : '';
 let rows = [];   // array of { [key]: value }
 let lastContextUid = null;  // last user the rows were prepared for
 const INITIAL_ROWS = 20;
@@ -31,13 +41,13 @@ function render(container) {
     <div class="page-header">
       <div>
         <h1>Importar trades</h1>
-        <div class="sub">Pega desde Excel, importa desde Apps Script o sube un archivo</div>
+        <div class="sub">${IS_NASDAQ ? 'Pega desde Excel o sube un archivo' : 'Pega desde Excel, importa desde Apps Script o sube un archivo'}</div>
       </div>
     </div>
 
     <div class="import-tabs">
       <button class="import-tab ${activeTab === 'paste' ? 'active' : ''}" data-tab="paste">Tabla / Pegar desde Excel</button>
-      <button class="import-tab ${activeTab === 'url' ? 'active' : ''}" data-tab="url">Desde Apps Script (URL)</button>
+      ${IS_NASDAQ ? '' : `<button class="import-tab ${activeTab === 'url' ? 'active' : ''}" data-tab="url">Desde Apps Script (URL)</button>`}
       <button class="import-tab ${activeTab === 'file' ? 'active' : ''}" data-tab="file">Subir archivo (JSON / CSV)</button>
     </div>
 
@@ -57,11 +67,9 @@ function paintPasteTab(container) {
   const headers = IMPORT_HEADERS[pasteSheet];
   container.innerHTML = `
     <div class="import-toolbar">
-      <select id="sheetSel" class="select">
-        <option value="ZONAS"   ${pasteSheet === 'ZONAS' ? 'selected' : ''}>Estrategia: ZONAS</option>
-        <option value="LIQUIDEZ" ${pasteSheet === 'LIQUIDEZ' ? 'selected' : ''}>Estrategia: LIQUIDEZ</option>
-        <option value="NASDAQ"  ${pasteSheet === 'NASDAQ' ? 'selected' : ''}>Estrategia: NASDAQ</option>
-      </select>
+      ${MULTI_SHEET ? `<select id="sheetSel" class="select">
+        ${SHEETS.map(k => `<option value="${k}" ${pasteSheet === k ? 'selected' : ''}>Estrategia: ${k}</option>`).join('')}
+      </select>` : ''}
       <button class="btn" id="addRowBtn">+ Añadir 5 filas</button>
       <button class="btn" id="clearBtn">Limpiar tabla</button>
       <button class="btn" id="exportBtn">Exportar CSV</button>
@@ -86,7 +94,8 @@ function paintPasteTab(container) {
     <div id="importResult"></div>
   `;
 
-  container.querySelector('#sheetSel').addEventListener('change', e => {
+  const sheetSel = container.querySelector('#sheetSel');
+  if (sheetSel) sheetSel.addEventListener('change', e => {
     pasteSheet = e.target.value;
     rows = newRows(INITIAL_ROWS);
     paintPasteTab(container);
@@ -273,9 +282,9 @@ function paintUrlTab(container) {
         result.innerHTML = 'El endpoint no devolvió trades.';
         return;
       }
-      const { added, dup } = state.addMany(trades);
+      const { added, dup, fuera } = addEdicion(trades);
       result.className = 'import-result ok';
-      result.innerHTML = `${added} importados · ${dup} duplicados ignorados de ${trades.length} recibidos.`;
+      result.innerHTML = `${added} importados · ${dup} duplicados ignorados${fueraTxt(fuera)} de ${trades.length} recibidos.`;
     } catch (e) {
       result.className = 'import-result err';
       result.innerHTML = 'Error: ' + e.message + '. Verifica que la URL del Apps Script sea correcta y esté publicada.';
@@ -321,18 +330,21 @@ function paintFileTab(container) {
           result.innerHTML = 'No se pudo extraer ningún trade del archivo.';
           return;
         }
-        const { added, dup } = state.addMany(trades);
+        const { added, dup, fuera } = addEdicion(trades);
         result.className = 'import-result ok';
-        result.innerHTML = `${added} importados · ${dup} duplicados ignorados de ${trades.length} extraídos.`;
+        result.innerHTML = `${added} importados · ${dup} duplicados ignorados${fueraTxt(fuera)} de ${trades.length} extraídos.`;
         return;
       }
 
       // CSV: assume first row is headers matching IMPORT_HEADERS for one strategy.
       const csv = parseCsv(text);
       const header = csv[0].map(h => h.toLowerCase());
-      let detectedSheet = 'ZONAS';
-      if (header.includes('htf') && header.includes('ltf') && header.includes('rr') && !header.includes('pip sl') && !header.includes('par')) detectedSheet = 'NASDAQ';
-      else if (header.includes('htf') && header.includes('ltf')) detectedSheet = 'LIQUIDEZ';
+      // Con una sola estrategia (edición Nasdaq) no hay nada que detectar.
+      let detectedSheet = MULTI_SHEET ? 'ZONAS' : SHEETS[0];
+      if (MULTI_SHEET) {
+        if (header.includes('htf') && header.includes('ltf') && header.includes('rr') && !header.includes('pip sl') && !header.includes('par')) detectedSheet = 'NASDAQ';
+        else if (header.includes('htf') && header.includes('ltf')) detectedSheet = 'LIQUIDEZ';
+      }
       const headers = IMPORT_HEADERS[detectedSheet];
       const trades = [];
       for (let i = 1; i < csv.length; i++) {
@@ -346,9 +358,9 @@ function paintFileTab(container) {
         result.innerHTML = 'No se pudo extraer ningún trade del archivo.';
         return;
       }
-      const { added, dup } = state.addMany(trades);
+      const { added, dup, fuera } = addEdicion(trades);
       result.className = 'import-result ok';
-      result.innerHTML = `${added} importados · ${dup} duplicados ignorados de ${trades.length} extraídos.`;
+      result.innerHTML = `${added} importados · ${dup} duplicados ignorados${fueraTxt(fuera)} de ${trades.length} extraídos.`;
     } catch (err) {
       result.className = 'import-result err';
       result.innerHTML = 'Error al leer el archivo: ' + err.message;
@@ -430,8 +442,8 @@ function showBackupV2Selector(resultEl, parsed) {
     const parts = [];
     try {
       if (wantTrades && trades.length) {
-        const { added, dup } = state.addMany(trades);
-        parts.push(`${added} trades (${dup} duplicados ignorados)`);
+        const { added, dup, fuera } = addEdicion(trades);
+        parts.push(`${added} trades (${dup} duplicados ignorados${fueraTxt(fuera)})`);
       }
       if (wantCuentas && cuentas.length) {
         let n = 0;

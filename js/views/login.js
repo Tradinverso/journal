@@ -1,10 +1,11 @@
 import { auth, authErrorMsg } from '../auth.js';
+import { EDITION } from '../edition.js';
 
 export function loginView(container) {
   container.innerHTML = `
     <div class="auth-card">
       <div class="auth-brand">
-        <img src="assets/logo.png" alt="Tradinverso" class="auth-logo-img"
+        <img src="${EDITION.logo}" alt="Tradinverso" class="auth-logo-img"
              onerror="this.style.display='none';document.getElementById('logoFallback').style.display='flex';">
         <div id="logoFallback" style="display:none;flex-direction:column;align-items:center;gap:12px;">
           <div class="auth-logo">T</div>

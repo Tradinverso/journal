@@ -3,11 +3,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// Dos proyectos de Firebase: el REAL (alumnos) y el de PRUEBAS (vacío, solo
-// usuarios de prueba). Se elige por la web desde la que se abre la app: solo
-// app.tradinverso.com usa los datos reales; panelprueba y el servidor local
-// usan el de pruebas. Así este archivo es idéntico en los dos repos y una
-// versión en pruebas nunca puede tocar datos de alumnos.
+// Proyectos de Firebase: el REAL de la app completa, el de la app NASDAQ (sus
+// alumnos aparte) y el de PRUEBAS (vacío, solo usuarios de prueba). Se elige
+// por la web desde la que se abre la app: app.tradinverso.com y
+// journal.tradinverso.com usan cada uno el suyo; panelprueba y el servidor
+// local usan el de pruebas. Así este archivo es idéntico en todos los repos y
+// una versión en pruebas nunca puede tocar datos de alumnos.
 const PROD_CONFIG = {
   apiKey: "AIzaSyAFEcGvTiz-alfMmZLs0wPXCJwcC2knKwM",
   authDomain: "tradinverso-dashboard.firebaseapp.com",
@@ -26,8 +27,17 @@ const TEST_CONFIG = {
   appId: "1:512054398967:web:c4725a013aeb6fe87928f2",
 };
 
-export const IS_TEST_ENV = location.hostname !== 'app.tradinverso.com';
-export const firebaseConfig = IS_TEST_ENV ? TEST_CONFIG : PROD_CONFIG;
+// Pendiente: se rellena al crear el proyecto de Firebase de la app Nasdaq.
+// Mientras sea null, esa web cae en el de pruebas (nunca en el real).
+const NASDAQ_CONFIG = null;
+
+const HOST_CONFIG = {
+  'app.tradinverso.com': PROD_CONFIG,
+  'journal.tradinverso.com': NASDAQ_CONFIG,
+};
+
+export const IS_TEST_ENV = !HOST_CONFIG[location.hostname];
+export const firebaseConfig = HOST_CONFIG[location.hostname] || TEST_CONFIG;
 
 export const ADMIN_EMAIL = 'tradinverso@gmail.com';
 

@@ -163,6 +163,7 @@ body { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 1
   color: var(--cyan);
 }
 .brand-logo svg { width: 100%; height: 100%; display: block; }
+.brand-logo img { width: 100%; height: 100%; display: block; object-fit: contain; }
 .brand-text { display: flex; flex-direction: column; gap: 1px; line-height: 1.15; min-width: 0; }
 .brand-line2 { font-size: 16px; font-weight: 700; letter-spacing: .06em; color: var(--text-strong); }
 .brand-line1 { font-size: 10px; font-weight: 500; color: var(--muted); letter-spacing: .1em; font-family: var(--mono); }

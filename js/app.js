@@ -1,6 +1,7 @@
 // Bootstrap principal. Orquesta auth → carga de datos → router.
 
 import './firebase.js';                  // init Firebase ANTES que nada
+import { EDITION, IS_NASDAQ } from './edition.js';
 import { auth } from './auth.js';
 import { state } from './state.js';
 import { theme } from './theme.js';
@@ -32,6 +33,22 @@ import { backtestView } from './views/backtest.js';
 import { backtestImportView } from './views/backtest-import.js';
 
 theme.init();
+
+// Nombre de la pestaña y de la app instalable según la edición (edition.js).
+// index.html trae los de la completa; la Nasdaq los cambia al arrancar.
+document.title = `Tradinverso · ${EDITION.nombre} ${EDITION.version.replace('v.', 'v')}`;
+if (IS_NASDAQ) {
+  const manifest = document.querySelector('link[rel="manifest"]');
+  if (manifest) manifest.href = 'manifest-nasdaq.webmanifest';
+  const appTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appTitle) appTitle.content = 'Tradinverso NQ';
+  document.querySelectorAll('link[rel="icon"]').forEach(l => {
+    const size = (l.getAttribute('sizes') || '').split('x')[0];
+    if (EDITION.favicons[size]) l.href = EDITION.favicons[size];
+  });
+  const apple = document.querySelector('link[rel="apple-touch-icon"]');
+  if (apple) apple.href = EDITION.appleIcon;
+}
 
 const view = document.getElementById('view');
 const sidebar = document.getElementById('sidebar');
@@ -137,7 +154,7 @@ function showSplash() {
   el.id = 'boot-splash';
   el.className = 'boot-splash';
   el.innerHTML = `
-    <img src="assets/logo.png" alt="Tradinverso" class="splash-logo"
+    <img src="${EDITION.logo}" alt="Tradinverso" class="splash-logo"
          onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'brand-logo',textContent:'T'}))">
     <div class="boot-splash-text">Cargando…</div>
   `;

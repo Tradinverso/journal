@@ -5,11 +5,20 @@
 //
 // Campos: { titulo, desc, url }
 //
-// (Vacío de momento — pásame los enlaces y los relleno.)
+// Cada edición (edition.js) tiene su lista: la Nasdaq solo lleva los que
+// correspondan a su programa.
 
-export const PROTOCOLOS_FIJOS = [
+import { IS_NASDAQ } from '../edition.js';
+
+const COMPLETO = [
   { titulo: 'Protocolo Operativa', desc: 'La operativa completa de Tradinverso.', url: 'https://drive.google.com/file/d/1Guw8Vxrn_hO9Vxl6dhHoqqfwG3gn-5Nv/view' },
   { titulo: 'Diario del Trader', desc: 'Plantilla para registrar tu operativa.', url: 'https://drive.google.com/file/d/1e38Cq33osDU8On_4O2WRHJ4iv1TdIJmX/view' },
   { titulo: 'Diario Inverso', desc: 'El diario en su versión inversa.', url: 'https://drive.google.com/file/d/1b41w-uvPitJcthb7Vtk0umSkRcsr_C-_/view' },
   { titulo: 'Reset del Trader', desc: 'Protocolo para resetear tu mente tras una racha.', url: 'https://drive.google.com/file/d/1RFGUa_w4BZu4z5q14NsTmkHPu4tcHW-L/view' },
 ];
+
+// Edición Nasdaq. PENDIENTE: de momento los mismos; David dirá cuáles se quedan
+// (y si alguno cambia por una versión solo de Nasdaq, con su propio enlace).
+const NASDAQ = [...COMPLETO];
+
+export const PROTOCOLOS_FIJOS = IS_NASDAQ ? NASDAQ : COMPLETO;

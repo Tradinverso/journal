@@ -10,16 +10,17 @@ import { todayLocal } from '../utils/timezone.js';
 import { fmtPct } from '../utils/number-format-es.js';
 import { fmtUsd } from '../utils/account-stats.js';
 import { STRATEGIES as STRAT_META, modelLabel } from '../utils/strategy-config.js';
+import { SHEETS, MULTI_SHEET } from '../edition.js';
 
 export function newTradeView(container) {
-  let sheet = 'ZONAS';
+  let sheet = SHEETS[0];
   let formData = init(sheet);
 
   container.innerHTML = `
     <div class="page-header">
       <div>
         <h1>Nuevo trade</h1>
-        <div class="sub">Selecciona la estrategia y rellena el formulario</div>
+        <div class="sub">${MULTI_SHEET ? 'Selecciona la estrategia y rellena el formulario' : `${STRAT_META[sheet].label} · rellena el formulario`}</div>
       </div>
     </div>
     <div id="stratChooser"></div>
@@ -31,9 +32,11 @@ export function newTradeView(container) {
   // el formulario), no enlaces de navegación.
   const stratC = container.querySelector('#stratChooser');
   function paintChooser() {
+    // Con una sola estrategia (edición Nasdaq) no hay nada que elegir.
+    if (!MULTI_SHEET) return;
     stratC.innerHTML = `
       <div class="rg-tabs gestion-tabs strat-tabs">
-        ${['ZONAS', 'LIQUIDEZ', 'NASDAQ'].map(k => {
+        ${SHEETS.map(k => {
           const meta = STRAT_META[k] || { label: k };
           const on = sheet === k;
           return `<button type="button" class="rg-tab ${on ? 'active' : ''}" data-sheet="${k}"

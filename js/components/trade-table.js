@@ -7,6 +7,11 @@ import { openEditTradeModal } from './trade-edit-modal.js';
 import { state } from '../state.js';
 import { accountUsd, fmtUsd } from '../utils/account-stats.js';
 import { STRATEGIES, modelLabel } from '../utils/strategy-config.js';
+import { MULTI_SHEET } from '../edition.js';
+
+// Con una sola estrategia (edición Nasdaq) sobran las columnas Estrategia y
+// Activo: serían siempre Nasdaq · NQ.
+const SHEET_COLS = MULTI_SHEET;
 
 // ¿La estrategia del trade usa modelos de entrada? (hoy solo Nasdaq)
 const tieneModelos = t => !!(STRATEGIES[t.sheet] && STRATEGIES[t.sheet].models);
@@ -200,7 +205,7 @@ export function renderTradeTable(container, trades, opts = {}) {
   function renderTable(filtered) {
     // Más reciente arriba: ordenamos cronológicamente y luego invertimos.
     const sorted = sortChrono(filtered).reverse();
-    const colspan = (isBacktest ? 11 : 15) + (canDelete ? 1 : 0) + (conModelos ? 1 : 0);
+    const colspan = (isBacktest ? 11 : 15) + (canDelete ? 1 : 0) + (conModelos ? 1 : 0) - (SHEET_COLS ? 0 : 2);
     const bodyContent = sorted.length
       ? sorted.map(t => row(t, canDelete, isBacktest, getMarked(), conModelos)).join('')
       : `<tr><td colspan="${colspan}" class="empty" style="padding:30px;">Ningún trade coincide con los filtros</td></tr>`;
@@ -212,8 +217,7 @@ export function renderTradeTable(container, trades, opts = {}) {
               <th></th>
               <th>Fecha</th>
               <th>Hora</th>
-              <th>Estrategia</th>
-              <th>Activo</th>
+              ${SHEET_COLS ? '<th>Estrategia</th><th>Activo</th>' : ''}
               <th>Setup</th>
               ${conModelos ? '<th>Modelo</th>' : ''}
               <th>Zona</th>
@@ -359,8 +363,8 @@ function row(t, canDelete, isBacktest = false, markedId = '', conModelos = false
       <td>${viewBtn}</td>
       <td>${isBacktest ? formatDateShort(t.date) + '/' + String(t.date || '').substring(2, 4) : formatDateShort(t.date)}</td>
       <td>${t.open_str || '–'}</td>
-      <td><span class="strat-pill ${STRAT_CLS[t.sheet]}">${STRAT_LABEL[t.sheet] || t.sheet}</span></td>
-      <td>${t.pair || '–'}</td>
+      ${SHEET_COLS ? `<td><span class="strat-pill ${STRAT_CLS[t.sheet]}">${STRAT_LABEL[t.sheet] || t.sheet}</span></td>
+      <td>${t.pair || '–'}</td>` : ''}
       <td>${t.setup || '–'}</td>
       ${conModelos ? `<td>${tieneModelos(t)
         ? (t.model ? modelLabel(t.model) : '<span style="color:var(--muted);">Sin modelo</span>')

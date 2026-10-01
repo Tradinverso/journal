@@ -14,6 +14,7 @@ import {
 import { fmtPct, fmtPctNoSign, fmtNum } from '../utils/number-format-es.js';
 import { MONTHS_ES_SHORT } from '../utils/date-helpers.js';
 import { STRATEGIES, modelLabel } from '../utils/strategy-config.js';
+import { SHEETS, MULTI_SHEET } from '../edition.js';
 import { kpiCard, kpiCardComposite } from '../components/kpi-card.js';
 import { createEquity, createDonut, createBar, createHourBar, createDayBar, createLongShort } from '../components/charts.js';
 import { renderHeatmap } from '../components/heatmap.js';
@@ -99,8 +100,8 @@ function filtrosHtml(allSheet, meta, esNoTomados = false) {
       ${zones.length > 1 ? sel('btZoneF', btZone, [{ v: 'all', l: 'Todas las zonas' }, ...zones.map(z => ({ v: z, l: z }))]) : ''}
       ${entries.length > 1 ? sel('btEntryF', btEntry, [{ v: 'all', l: 'Todas las entradas' }, ...entries.map(e => ({ v: e, l: e }))]) : ''}
       ${sel('btResF', btRes, [{ v: 'all', l: 'Todos los resultados' }, { v: 'TP', l: 'Solo TP' }, { v: 'SL', l: 'Solo SL' }, { v: 'BE', l: 'Solo BE' }])}
-      ${esNoTomados ? sel('btSheetF', btSheetF, [{ v: 'all', l: 'Todas las estrategias' },
-        ...Object.keys(STRATEGIES).map(k => ({ v: k, l: STRATEGIES[k].label }))]) : ''}
+      ${esNoTomados && MULTI_SHEET ? sel('btSheetF', btSheetF, [{ v: 'all', l: 'Todas las estrategias' },
+        ...SHEETS.map(k => ({ v: k, l: STRATEGIES[k].label }))]) : ''}
       ${hayFiltros() ? '<button class="btn ghost" id="btClearF">× Limpiar filtros</button>' : ''}
     </div>`;
 }
@@ -111,7 +112,8 @@ function filtrosHtml(allSheet, meta, esNoTomados = false) {
 // tres estrategias).
 const NO_TOMADOS_META = {
   label: 'No tomados',
-  pairs: ['EUR/USD', 'GBP/USD', 'XAU/USD', 'NQ'],
+  // Los pares de las estrategias de esta edición (en la Nasdaq, solo NQ).
+  pairs: [...new Set(SHEETS.flatMap(k => STRATEGIES[k].pairs))],
 };
 
 function render(container, sheet) {

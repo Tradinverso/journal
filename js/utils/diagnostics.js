@@ -19,6 +19,11 @@ import {
 } from './sensaciones.js';
 import { tzHourDiff, todayLocal } from './timezone.js';
 import { auth } from '../auth.js';
+import { SHEETS, MULTI_SHEET } from '../edition.js';
+
+// Estrategias que reciben alertas propias. Con una sola (edición Nasdaq) serían
+// las globales repetidas con otro título, así que no hay ninguna.
+const PER_SHEET = MULTI_SHEET ? SHEETS : [];
 
 // ═══════════════════════════════════════════════════════════════
 // UMBRALES — todas las medidas del diagnóstico en un solo sitio.
@@ -194,7 +199,7 @@ export function buildAlerts(trades) {
 
   // ── Racha SL activa por estrategia ──
   if (isActiveTrader) {
-    for (const sheet of ['ZONAS', 'LIQUIDEZ', 'NASDAQ']) {
+    for (const sheet of PER_SHEET) {
       const stTrades = trades.filter(t => t.sheet === sheet);
       const cur = currentSlStreak(stTrades);
       if (cur >= UMBRALES.rachaSl.protocolo) {
@@ -603,7 +608,7 @@ export function buildAlerts(trades) {
   }
 
   // ── Por estrategia: peor sensación ──
-  for (const sheet of ['ZONAS', 'LIQUIDEZ', 'NASDAQ']) {
+  for (const sheet of PER_SHEET) {
     const st = withSens.filter(t => t.sheet === sheet);
     if (st.length < 3) continue;
     const stWR = winrate(st);
@@ -657,7 +662,7 @@ export function buildAlerts(trades) {
   }
 
   // Por estrategia: mejor sensación
-  for (const sheet of ['ZONAS', 'LIQUIDEZ', 'NASDAQ']) {
+  for (const sheet of PER_SHEET) {
     const st = withSens.filter(t => t.sheet === sheet);
     if (st.length < 3) continue;
     const stWR = winrate(st);

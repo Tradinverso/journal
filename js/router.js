@@ -2,6 +2,7 @@
 
 import { auth } from './auth.js';
 import { state } from './state.js';
+import { HIDDEN_ROUTES } from './edition.js';
 
 const routes = new Map();
 let currentCleanup = null;
@@ -45,6 +46,11 @@ export const router = {
         return;
       }
       if (ADMIN_ROUTES.has(path) && !auth.isAdmin()) {
+        window.location.hash = '#/dashboard';
+        return;
+      }
+      // Secciones que esta edición no tiene (ver edition.js) → Dashboard.
+      if (HIDDEN_ROUTES.has(path)) {
         window.location.hash = '#/dashboard';
         return;
       }

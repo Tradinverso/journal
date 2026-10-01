@@ -23,6 +23,8 @@ import { kpiCard } from '../components/kpi-card.js';
 import { createEquity, createDonut, createBar, createHourBar, createDayBar, createLongShort } from '../components/charts.js';
 import { renderHeatmap } from '../components/heatmap.js';
 import { renderPills } from '../components/pills.js';
+import { SHEETS, MULTI_SHEET } from '../edition.js';
+import { STRATEGIES } from '../utils/strategy-config.js';
 
 const STORAGE_KEY = 'tradinverso_grupo_filter';
 
@@ -140,8 +142,8 @@ function paint(container) {
           </div>
         </div>
 
-        <div class="section-title">Por estrategia</div>
-        <div class="grid-3" id="grupoStrats"></div>
+        ${MULTI_SHEET ? `<div class="section-title">Por estrategia</div>
+        <div class="grid-3" id="grupoStrats"></div>` : ''}
 
         <div class="section-title">Timing</div>
         <div class="grid-2">
@@ -254,7 +256,9 @@ function paint(container) {
   const nStudents = Math.max(1, studentsSel.length);
 
   // ── Por estrategia (HTML antes de los charts) ─────────────
-  body.querySelector('#grupoStrats').innerHTML = ['ZONAS', 'LIQUIDEZ', 'NASDAQ'].map(s => stratCard(s, filtered.filter(t => t.sheet === s), nStudents)).join('');
+  // Con una sola estrategia (edición Nasdaq) la tarjeta repetiría los KPIs.
+  const stratsEl = body.querySelector('#grupoStrats');
+  if (stratsEl) stratsEl.innerHTML = SHEETS.map(s => stratCard(s, filtered.filter(t => t.sheet === s), nStudents)).join('');
 
   // ── Charts — en el siguiente frame (layout listo) para evitar el lienzo
   //    en blanco en el primer pintado (mismo patrón que dashboard/estrategias).
@@ -263,16 +267,14 @@ function paint(container) {
   requestAnimationFrame(() => {
     if (!body.querySelector('#grupoEquity')) return;   // la vista cambió
     createEquity(body.querySelector('#grupoEquity'), [
-      { key: 'ALL', label: 'Global', data: avgCurve(filtered) },
-      { key: 'ZONAS',    label: 'Zonas',    data: avgCurve(filtered.filter(t => t.sheet === 'ZONAS')) },
-      { key: 'LIQUIDEZ', label: 'Liquidez', data: avgCurve(filtered.filter(t => t.sheet === 'LIQUIDEZ')) },
-      { key: 'NASDAQ',   label: 'Nasdaq',   data: avgCurve(filtered.filter(t => t.sheet === 'NASDAQ')) },
+      { key: 'ALL', label: MULTI_SHEET ? 'Global' : STRATEGIES[SHEETS[0]].label, data: avgCurve(filtered) },
+      ...(MULTI_SHEET ? SHEETS.map(k => ({ key: k, label: STRATEGIES[k].label, data: avgCurve(filtered.filter(t => t.sheet === k)) })) : []),
     ]);
     const m = monthlyPnl(filtered);
     createBar(body.querySelector('#grupoMonthly'),
       m.map(d => MONTHS_ES_SHORT[+d.month.split('-')[1] - 1] + ' ' + d.month.substring(2, 4)),
       m.map(d => +((perfMode === 'real' ? d.pnlReal : d.pnl) / nStudents).toFixed(2)));
-    ['ZONAS', 'LIQUIDEZ', 'NASDAQ'].forEach(s => {
+    SHEETS.forEach(s => {
       const sub = filtered.filter(t => t.sheet === s);
       const c = tradeCounts(sub);
       const donut = body.querySelector(`[data-strat-donut="${s}"]`);
@@ -281,7 +283,7 @@ function paint(container) {
     createHourBar(body.querySelector('#grupoHour'), wrByHour(filtered));
     createDayBar(body.querySelector('#grupoDay'), wrByDay(filtered));
     renderHeatmap(body.querySelector('#grupoHeatmap'), filtered);
-    const ls = ['ZONAS', 'LIQUIDEZ', 'NASDAQ'].map(sheet => ({
+    const ls = SHEETS.map(sheet => ({
       label: sheet.charAt(0) + sheet.slice(1).toLowerCase(),
       ...longVsShort(filtered.filter(t => t.sheet === sheet)),
     }));
