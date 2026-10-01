@@ -13,7 +13,7 @@ decide por la web desde la que se abre:
 | Estrategias | Zonas, Liquidez y Nasdaq | Solo Nasdaq |
 | Cuentas | CFD y Futuros | Solo Futuros |
 | Contabilidad | Sí | No |
-| Psicotrading | Reflexiones, Meditaciones y Protocolos | Reflexiones y Protocolos (lista propia en `protocolos-fijos.js`) |
+| Psicotrading | Reflexiones, Meditaciones y Protocolos | Reflexiones, Meditación pre-operativa y Protocolos Operativa y Reset del Trader (`meditaciones.js`, `protocolos-fijos.js`) |
 | Logo e iconos | `assets/` | `assets/nasdaq/` |
 
 En local (`localhost`), la edición se elige con `?edicion=nasdaq` o

@@ -2,8 +2,8 @@
 //   - 'completo' (app.tradinverso.com): las tres estrategias, cuentas CFD y de
 //     futuros, Contabilidad y Psicotrading entero.
 //   - 'nasdaq' (journal.tradinverso.com): solo la estrategia Nasdaq, solo
-//     cuentas de futuros, sin Contabilidad ni Meditaciones, y con sus propios
-//     protocolos fijos (protocolos-fijos.js).
+//     cuentas de futuros, sin Contabilidad, y con sus propias listas de
+//     protocolos fijos y meditaciones (protocolos-fijos.js, meditaciones.js).
 // La edición la decide la web desde la que se abre, igual que el proyecto de
 // Firebase (firebase.js). Fuera de esas dos webs (servidor local) se puede
 // elegir con ?edicion=nasdaq o ?edicion=completo; queda recordada en ese
@@ -35,7 +35,7 @@ const EDITIONS = {
     sheets: ['NASDAQ'],
     cuentaTipos: ['Futuros'],
     contabilidad: false,
-    meditaciones: false,
+    meditaciones: true,   // solo la pre-operativa (meditaciones.js)
     logo: 'assets/nasdaq/logo.png',
     favicons: { 32: 'assets/nasdaq/favicon-32.png', 192: 'assets/nasdaq/favicon-192.png' },
     appleIcon: 'assets/nasdaq/icon-192.png',
