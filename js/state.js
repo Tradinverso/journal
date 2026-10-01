@@ -743,6 +743,73 @@ export const state = {
     }
   },
 
+  // ── Traer del panel principal (app Nasdaq, solo admin) ────
+  // Copia los trades de Nasdaq y las cuentas de futuros del principal CON SUS
+  // MISMOS ids, así que repetirlo no duplica: lo nuevo se añade, lo cambiado se
+  // actualiza (manda el principal) y lo que se trajo antes y ya no existe allí
+  // se borra. Lo registrado directamente en la app Nasdaq no se toca nunca:
+  // config.principalSync guarda qué ids vinieron del principal.
+  async syncFromPrincipal({ trades = [], cuentas = [], gestionesCustom = [] } = {}) {
+    if (this.viewAsUid) throw new Error('Sal de la vista de alumno antes de traer tus trades');
+    const uid = targetUid();
+    if (!uid) throw new Error('No hay sesión');
+    const prev = this.config.principalSync || {};
+    const prevTrades = new Set(prev.trades || []);
+    const prevCuentas = new Set(prev.cuentas || []);
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const res = { tradesNuevos: 0, tradesCambiados: 0, tradesBorrados: 0, cuentasNuevas: 0, cuentasCambiadas: 0, cuentasBorradas: 0 };
+
+    // Cuentas
+    const cIn = cuentas.map(sanitizeCuenta).filter(Boolean);
+    const cIds = new Set(cIn.map(c => c.id));
+    const cGuardar = [];
+    for (const c of cIn) {
+      const i = this.cuentas.findIndex(x => x.id === c.id);
+      if (i < 0) { this.cuentas.push(c); cGuardar.push(c); res.cuentasNuevas++; }
+      else if (!same(this.cuentas[i], c)) { this.cuentas[i] = c; cGuardar.push(c); res.cuentasCambiadas++; }
+    }
+    const cBorrar = [...prevCuentas].filter(id => !cIds.has(id) && this.cuentas.some(c => c.id === id));
+    this.cuentas = this.cuentas.filter(c => !cBorrar.includes(c.id));
+    res.cuentasBorradas = cBorrar.length;
+
+    // Trades: solo se conservan las asignaciones a cuentas que existen aquí
+    const tIn = trades
+      .filter(t => t && t.sheet === 'NASDAQ')
+      .map(t => sanitizeTrade({ ...t, accounts: (t.accounts || []).filter(a => a && cIds.has(a.accountId)) }))
+      .filter(Boolean);
+    const tIds = new Set(tIn.map(t => t.id));
+    const tGuardar = [];
+    for (const t of tIn) {
+      const i = this.trades.findIndex(x => x.id === t.id);
+      if (i < 0) { this.trades.push(t); tGuardar.push(t); res.tradesNuevos++; }
+      else if (!same(this.trades[i], t)) { this.trades[i] = t; tGuardar.push(t); res.tradesCambiados++; }
+    }
+    const tBorrar = [...prevTrades].filter(id => !tIds.has(id) && this.trades.some(t => t.id === id));
+    this.trades = this.trades.filter(t => !tBorrar.includes(t.id));
+    res.tradesBorrados = tBorrar.length;
+
+    // Gestiones personalizadas que usan esas cuentas (por id, manda el principal)
+    const custom = [...(this.config.futGestionesCustom || [])];
+    for (const g of gestionesCustom) {
+      const i = custom.findIndex(x => x && x.id === g.id);
+      if (i < 0) custom.push(g); else custom[i] = g;
+    }
+
+    this.emit();
+    // Aquí sí se espera a la nube: el botón tiene que poder decir si falló.
+    await Promise.all([
+      ...cGuardar.map(c => sync.saveCuenta(uid, c)),
+      ...cBorrar.map(id => sync.deleteCuenta(uid, id)),
+      tGuardar.length ? sync.saveTradesBatch(uid, tGuardar) : null,
+      tBorrar.length ? sync.deleteTradesBatch(uid, tBorrar) : null,
+    ]);
+    this.setConfig({
+      futGestionesCustom: custom,
+      principalSync: { trades: [...tIds], cuentas: [...cIds], at: Date.now() },
+    });
+    return res;
+  },
+
   // ── Ciclo de vida de la cuenta ───────────────────────────
   // Avanza de fase: challenge_1 → (1 fase ? fondeada : challenge_2) → fondeada.
   advanceFase(cuentaId) {

@@ -47,6 +47,10 @@ export const firebaseConfig = HOST_CONFIG[location.hostname] || TEST_CONFIG;
 
 export const ADMIN_EMAIL = 'tradinverso@gmail.com';
 
+// Proyecto del panel principal: la app Nasdaq lo LEE para traer los trades de
+// Nasdaq del admin (utils/principal-sync.js).
+export const PRINCIPAL_CONFIG = PROD_CONFIG;
+
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);

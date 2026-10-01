@@ -1,12 +1,13 @@
 import { state } from '../state.js';
 import { storage } from '../storage.js';
-import { auth } from '../auth.js';
+import { auth, authErrorMsg } from '../auth.js';
 import { IMPORT_HEADERS, rowToTrade } from '../utils/sheet-parsers.js';
 import { parsePastedText } from '../utils/paste-parser.js';
 import { fetchAppsScript, mapAppsScriptTrade } from '../utils/apps-script-import.js';
 import { ajustesTabs } from '../components/ajustes-tabs.js';
 import { parseCsv, toCsv, downloadFile } from '../utils/csv.js';
 import { SHEETS, MULTI_SHEET, IS_NASDAQ, hasSheet } from '../edition.js';
+import { principalUser, principalSignIn, principalSignOut, loadPrincipalData } from '../utils/principal-sync.js';
 
 let activeTab = 'paste';
 let pasteSheet = SHEETS[0];
@@ -49,6 +50,7 @@ function render(container) {
       <button class="import-tab ${activeTab === 'paste' ? 'active' : ''}" data-tab="paste">Tabla / Pegar desde Excel</button>
       ${IS_NASDAQ ? '' : `<button class="import-tab ${activeTab === 'url' ? 'active' : ''}" data-tab="url">Desde Apps Script (URL)</button>`}
       <button class="import-tab ${activeTab === 'file' ? 'active' : ''}" data-tab="file">Subir archivo (JSON / CSV)</button>
+      ${puedeTraerPrincipal() ? `<button class="import-tab ${activeTab === 'principal' ? 'active' : ''}" data-tab="principal">Desde el panel principal</button>` : ''}
     </div>
 
     <div id="tabContent"></div>
@@ -59,6 +61,7 @@ function render(container) {
   const c = container.querySelector('#tabContent');
   if (activeTab === 'paste') paintPasteTab(c);
   else if (activeTab === 'url') paintUrlTab(c);
+  else if (activeTab === 'principal' && puedeTraerPrincipal()) paintPrincipalTab(c);
   else paintFileTab(c);
 }
 
@@ -293,6 +296,104 @@ function paintUrlTab(container) {
 }
 
 // ── FILE TAB ─────────────────────────────────────────────────
+// ── DESDE EL PANEL PRINCIPAL (app Nasdaq, solo admin, en su propia cuenta) ──
+function puedeTraerPrincipal() {
+  return IS_NASDAQ && auth.isAdmin() && !state.viewAsUid;
+}
+
+async function paintPrincipalTab(container) {
+  const last = state.config.principalSync && state.config.principalSync.at;
+  container.innerHTML = `<div class="card"><div class="loader"><div class="spinner"></div><div>Comprobando conexión con el panel principal…</div></div></div>`;
+  let user = null;
+  try { user = await principalUser(); } catch (e) { console.error(e); }
+
+  const intro = `
+    <div class="card-title">Traer mis trades de Nasdaq del panel principal</div>
+    <div class="card-sub" style="line-height:1.6;">
+      Copia aquí tus trades de <b>Nasdaq</b> y tus <b>cuentas de futuros</b> de app.tradinverso.com.
+      Púlsalo cuando quieras ponerla al día: añade lo nuevo, actualiza lo que hayas cambiado allí y quita lo que hayas borrado allí.
+      Lo que registres directamente en esta app no se toca, y el panel principal <b>solo se lee</b>.
+      ${last ? `<br>Última vez: <b>${new Date(last).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</b>.` : ''}
+    </div>`;
+
+  if (!user) {
+    container.innerHTML = `
+      <div class="card" style="max-width:560px;">
+        ${intro}
+        <div class="form" style="max-width:none;gap:12px;margin-top:14px;">
+          <div style="font-size:12px;color:var(--muted);">Son dos bases de datos distintas: entra con tu usuario del <b>panel principal</b>. Solo se pide la primera vez en este navegador.</div>
+          <div class="form-field">
+            <label class="form-label">Email del panel principal</label>
+            <input class="form-input" type="email" id="ppEmail" value="${escapeHtml(auth.currentUser?.email || '')}" autocomplete="username">
+          </div>
+          <div class="form-field">
+            <label class="form-label">Contraseña del panel principal</label>
+            <input class="form-input" type="password" id="ppPass" autocomplete="current-password">
+          </div>
+          <div id="ppErr" class="auth-error" style="display:none;"></div>
+          <div><button class="btn primary" id="ppLogin">Conectar</button></div>
+        </div>
+      </div>`;
+    const btn = container.querySelector('#ppLogin');
+    const go = async () => {
+      const err = container.querySelector('#ppErr');
+      err.style.display = 'none';
+      btn.disabled = true; btn.textContent = 'Conectando…';
+      try {
+        await principalSignIn(container.querySelector('#ppEmail').value.trim(), container.querySelector('#ppPass').value);
+        paintPrincipalTab(container);
+      } catch (e) {
+        err.textContent = '⚠ ' + authErrorMsg(e);
+        err.style.display = 'flex';
+        btn.disabled = false; btn.textContent = 'Conectar';
+      }
+    };
+    btn.addEventListener('click', go);
+    container.querySelector('#ppPass').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="card" style="max-width:560px;">
+      ${intro}
+      <div style="margin-top:14px;font-size:12px;color:var(--muted);">Conectado al principal como <b>${escapeHtml(user.email)}</b> · <a href="#" id="ppOut">desconectar</a></div>
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="btn primary" id="ppSync">⟳ Traer ahora</button>
+        <span id="ppMsg" style="font-size:12px;"></span>
+      </div>
+    </div>`;
+  container.querySelector('#ppOut').addEventListener('click', async e => {
+    e.preventDefault();
+    await principalSignOut();
+    paintPrincipalTab(container);
+  });
+  const btn = container.querySelector('#ppSync');
+  const msg = container.querySelector('#ppMsg');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'Trayendo…';
+    msg.style.color = 'var(--muted)'; msg.textContent = '';
+    try {
+      const data = await loadPrincipalData();
+      const r = await state.syncFromPrincipal(data);
+      const n = (k, uno, varios) => `${k} ${k === 1 ? uno : varios}`;
+      const partes = [];
+      if (r.tradesNuevos) partes.push(n(r.tradesNuevos, 'trade nuevo', 'trades nuevos'));
+      if (r.tradesCambiados) partes.push(n(r.tradesCambiados, 'actualizado', 'actualizados'));
+      if (r.tradesBorrados) partes.push(n(r.tradesBorrados, 'quitado', 'quitados'));
+      if (r.cuentasNuevas) partes.push(n(r.cuentasNuevas, 'cuenta nueva', 'cuentas nuevas'));
+      if (r.cuentasCambiadas) partes.push(n(r.cuentasCambiadas, 'cuenta actualizada', 'cuentas actualizadas'));
+      if (r.cuentasBorradas) partes.push(n(r.cuentasBorradas, 'cuenta quitada', 'cuentas quitadas'));
+      msg.style.color = 'var(--green)';
+      msg.textContent = '✓ ' + (partes.length ? partes.join(' · ') : `Ya estaba al día (${data.trades.length} trades de Nasdaq)`);
+    } catch (e) {
+      console.error('Traer del principal:', e);
+      msg.style.color = 'var(--red)';
+      msg.textContent = '⚠ No se pudo traer: ' + (e.message || e);
+    }
+    btn.disabled = false; btn.textContent = '⟳ Traer ahora';
+  });
+}
+
 function paintFileTab(container) {
   container.innerHTML = `
     <div class="card">
