@@ -27,9 +27,15 @@ const TEST_CONFIG = {
   appId: "1:512054398967:web:c4725a013aeb6fe87928f2",
 };
 
-// Pendiente: se rellena al crear el proyecto de Firebase de la app Nasdaq.
-// Mientras sea null, esa web cae en el de pruebas (nunca en el real).
-const NASDAQ_CONFIG = null;
+// App Nasdaq (journal.tradinverso.com): sus alumnos, aparte de los del completo.
+const NASDAQ_CONFIG = {
+  apiKey: "AIzaSyA3Tev3HQFCM8BfMYPw111a2riC6pwpp7c",
+  authDomain: "tradinverso-journal.firebaseapp.com",
+  projectId: "tradinverso-journal",
+  storageBucket: "tradinverso-journal.firebasestorage.app",
+  messagingSenderId: "219857798820",
+  appId: "1:219857798820:web:a98e813d4481d660664831",
+};
 
 const HOST_CONFIG = {
   'app.tradinverso.com': PROD_CONFIG,
