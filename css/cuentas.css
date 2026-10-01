@@ -1,0 +1,158 @@
+/* ── Cuentas: tabs de tipo + hint ────────────────────────── */
+.type-tabs { display: inline-flex; }
+.type-tabs.pill-group { gap: 4px; }
+.type-tabs .pill { padding: 5px 12px; font-size: 11px; }
+
+.cuentas-hint {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--muted);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.cuentas-hint b { color: var(--text); font-weight: 600; }
+
+/* ── Cuentas: tablero por fase (columnas) ────────────────── */
+.cuenta-cols {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px; align-items: start; margin-bottom: 24px;
+}
+.cuenta-col {
+  background: var(--card2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.cuenta-col-hdr { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.cuenta-col-title { font-size: 13px; font-weight: 700; flex: 1; }
+.cuenta-col-count { font-size: 11px; color: var(--muted); background: var(--surface); padding: 2px 8px; border-radius: 20px; font-family: var(--mono); }
+.cuenta-gtag { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+.cuenta-gtag.g1 { background: var(--liquidez-bg); color: var(--liquidez); }
+.cuenta-gtag.g2 { background: var(--zonas-bg); color: var(--zonas); }
+.cuenta-gtag.gf { background: var(--green-bg); color: var(--green); }
+.cuenta-gtag.gp { background: var(--accent-bg); color: var(--accent); }
+.cuenta-col-body { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+
+.cuenta-card {
+  background: var(--glass); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; cursor: pointer;
+  position: relative; overflow: hidden;
+  transition: transform .18s var(--ease, ease), border-color .18s, box-shadow .18s;
+}
+.cuenta-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--green); }
+.cuenta-card.st-activa::before  { background: linear-gradient(180deg, var(--green), var(--cyan)); }
+.cuenta-card.st-pausada::before { background: var(--orange); }
+.cuenta-card.st-pasada::before  { background: var(--dim); }
+.cuenta-card.st-perdida::before { background: var(--red); }
+.cuenta-card.st-pausada { opacity: .85; }
+.cuenta-card.st-perdida, .cuenta-card.st-pasada { opacity: .7; }
+.cuenta-card:hover { transform: translateY(-2px); border-color: var(--glass-border); box-shadow: var(--glow-card); }
+
+.cuenta-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+.cuenta-card-id { min-width: 0; }
+.cuenta-card-title { font-size: 14px; font-weight: 600; color: var(--text-strong); letter-spacing: -.2px; line-height: 1.25; }
+.cuenta-card-title .cc-cap { color: var(--muted); font-weight: 500; font-family: var(--mono); font-size: 12px; }
+.cuenta-card-sub { margin-top: 6px; font-size: 11px; font-family: var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cuenta-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.cuenta-card-actions .btn { padding: 4px 8px; font-size: 12px; }
+
+.cuenta-equity { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: -.5px; line-height: 1; margin-bottom: 14px; }
+.cuenta-equity-pct { font-size: 12px; font-family: var(--mono); opacity: .8; font-weight: 400; }
+
+.cuenta-card-foot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.cuenta-card-foot .btn { flex: 1 1 auto; min-width: 72px; padding: 6px 8px; font-size: 11px; justify-content: center; white-space: nowrap; }
+
+.cuenta-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.cuenta-stat { display: flex; flex-direction: column; gap: 2px; }
+.cuenta-stat-l { font-size: 10px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.cuenta-stat-v { font-size: 13px; font-family: var(--mono); color: var(--text); font-weight: 500; }
+
+/* ── Badges fase / estado ─────────────────────────────────── */
+.badge.fase-c1, .badge.fase-challenge_1 { background: rgba(59,130,246,.15); color: var(--accent); border-color: rgba(59,130,246,.4); }
+.badge.fase-c2, .badge.fase-challenge_2 { background: rgba(168,85,247,.15); color: var(--zonas); border-color: rgba(168,85,247,.4); }
+.badge.fase-fond, .badge.fase-fondeada  { background: rgba(16,185,129,.15); color: var(--green); border-color: rgba(16,185,129,.4); }
+.badge.fase-prop, .badge.fase-propia    { background: rgba(168,85,247,.15); color: var(--liquidez); border-color: rgba(168,85,247,.4); }
+.badge.st-activa  { background: rgba(16,185,129,.12); color: var(--green); border-color: rgba(16,185,129,.3); }
+.badge.st-pausada { background: rgba(255,165,2,.12); color: var(--orange); border-color: rgba(255,165,2,.3); }
+.badge.st-pasada  { background: rgba(16,185,129,.18); color: var(--green); border-color: rgba(16,185,129,.45); }
+.badge.st-perdida { background: rgba(239,68,68,.12); color: var(--red); border-color: rgba(239,68,68,.3); }
+
+/* ── Cuenta-assign (componente en formularios) ───────────── */
+.ca-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.ca-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px;
+}
+.ca-row.ca-orphan { background: var(--orange-bg); border-color: rgba(255,165,2,.3); }
+.ca-label { flex: 1; font-size: 12px; font-weight: 500; }
+.ca-meta { color: var(--muted); font-family: var(--mono); font-weight: 400; }
+.ca-risk, .ca-usd, .ca-comm { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+.ca-comm .ca-risk-input { width: 56px; }
+.ca-risk-input, .ca-usd-input {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 4px 6px; border-radius: 5px;
+  font-family: var(--mono); font-size: 12px; text-align: center;
+}
+.ca-risk-input { width: 60px; }
+.ca-usd-input { width: 80px; }
+.ca-risk-input:focus, .ca-usd-input:focus { outline: none; border-color: var(--accent); }
+.ca-usd-input:disabled { opacity: 0.4; cursor: not-allowed; }
+.ca-x {
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  padding: 4px 8px; border-radius: 5px; font-size: 14px;
+}
+.ca-x:hover { color: var(--red); background: var(--hover); }
+.ca-add { margin-top: 8px; }
+.ca-add .select { width: 100%; }
+
+/* ── Account badge en trade-table ─────────────────────────── */
+.acc-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-right: 2px;
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 9px;
+  font-family: var(--mono);
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid rgba(59,130,246,.3);
+}
+.acc-badge.acc-more {
+  background: var(--hover);
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: help;
+}
+
+/* ── Notes / sub-text en cuenta detail ────────────────────── */
+.cuenta-card-meta .badge { font-size: 10px; padding: 2px 8px; }
+
+/* ── Barras de progreso (Target / Max DD) ─────────────────── */
+.prog-row {
+  margin-top: 14px;
+}
+.prog-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; margin-bottom: 6px;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+.prog-head strong { color: var(--text); font-family: var(--font); font-size: 14px; font-weight: 600; }
+.prog-track {
+  height: 10px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.prog-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width .3s ease, background .2s;
+}

@@ -1,0 +1,186 @@
+/* ── Pantalla de login ───────────────────────────────────── */
+body[data-auth="false"] #sidebar { display: none; }
+body[data-auth="false"] { grid-template-columns: 1fr; }
+body[data-auth="false"] #view {
+  max-width: none; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; background: transparent;
+}
+
+.auth-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 38px 34px;
+  width: 100%; max-width: 390px;
+  box-shadow: var(--glow-soft), var(--glow-card);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+}
+.auth-brand {
+  display: flex; flex-direction: column; align-items: center;
+  margin-bottom: 28px; gap: 12px;
+}
+.auth-logo {
+  width: 58px; height: 58px; border-radius: 16px;
+  background: linear-gradient(135deg, var(--cyan), var(--accent));
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; color: #04121a; font-size: 24px;
+  box-shadow: var(--glow-accent);
+}
+.auth-tagline { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; }
+.auth-logo-img {
+  display: block;
+  width: 100%; max-width: 220px;
+  height: auto;
+  border-radius: 12px;
+  margin: 0 auto;
+  background: #fff;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+.auth-title { font-family: var(--font-display); font-size: 22px; font-weight: 600; letter-spacing: -0.4px; color: var(--text-strong); }
+
+.auth-form { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.auth-form .form-input { padding: 12px 14px; font-size: 14px; }
+.auth-form .btn.primary { padding: 12px; font-size: 14px; justify-content: center; }
+.auth-form .btn.primary[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+.auth-error {
+  background: var(--red-bg);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: var(--red);
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.auth-error.auth-success {
+  background: var(--green-bg, rgba(46,213,115,0.12));
+  border-color: rgba(46,213,115,0.28);
+  color: var(--green, #2ed573);
+}
+.auth-help {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-top: 18px;
+  line-height: 1.6;
+}
+.auth-help a {
+  color: var(--accent, #4a9eff);
+  text-decoration: none;
+  cursor: pointer;
+}
+.auth-help a:hover { text-decoration: underline; }
+.auth-form a {
+  color: var(--accent, #4a9eff);
+  text-decoration: none;
+  cursor: pointer;
+  font-family: var(--mono);
+}
+.auth-form a:hover { text-decoration: underline; }
+
+/* ── Spinner pequeño (botones y estados de carga sueltos) ──── */
+.spinner-sm {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+/* Dentro de un botón primario (fondo claro) mantiene su contraste original */
+.btn .spinner-sm {
+  border-color: rgba(10,15,30,0.2);
+  border-top-color: #080B12;
+}
+
+/* ── Splash de boot (mientras Firebase autentica) ────────── */
+.boot-splash {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; z-index: 99999;
+}
+.boot-splash .brand-logo { width: 56px; height: 56px; border-radius: 14px; font-size: 24px; }
+.boot-splash .splash-logo { width: 140px; height: auto; border-radius: 14px; background: #fff; padding: 10px; }
+.boot-splash-text { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+/* ── Banner de impersonation (admin viendo como alumno) ──── */
+.imp-banner {
+  background: linear-gradient(90deg, rgba(255,165,2,0.15), rgba(255,165,2,0.08));
+  border: 1px solid rgba(255,165,2,0.4);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.imp-banner-icon { font-size: 16px; }
+.imp-banner-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--orange);
+  font-weight: 500;
+}
+.imp-banner-text strong { color: var(--text-strong); }
+.imp-banner-text .meta { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-left: 8px; }
+
+/* ── Banner de aviso de backup pendiente ──────────────────── */
+.backup-warn {
+  background: rgba(255,165,2,0.12);
+  border: 1px solid rgba(255,165,2,0.4);
+  border-left: 3px solid var(--orange);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-size: 12px; color: var(--orange);
+}
+.backup-warn strong { color: var(--text-strong); }
+.backup-warn .btn { margin-left: auto; padding: 6px 14px; font-size: 11px; }
+
+/* ── Buscador en panel admin ──────────────────────────────── */
+.admin-search {
+  display: flex; gap: 8px; align-items: center;
+  margin-bottom: 14px;
+}
+.admin-search input.form-input {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.admin-search .btn { padding: 6px 12px; font-size: 14px; }
+
+/* ── Indicador de conexión ───────────────────────────────── */
+.conn-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--border);
+  font-family: var(--mono); font-size: 11px;
+  background: var(--surface);
+}
+.conn-badge.online  { color: var(--green); border-color: var(--green); }
+.conn-badge.offline { color: var(--orange); border-color: var(--orange); }
+.conn-dot { width: 8px; height: 8px; border-radius: 50%; }
+.conn-badge.online .conn-dot  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.conn-badge.offline .conn-dot { background: var(--orange); }
+
+/* ── Sidebar: pie — zona horaria + reloj + salir ─────────── */
+.sidebar-foot { display: flex; align-items: stretch; gap: 6px; margin: 6px 0 10px; }
+/* Zona horaria + fecha/hora actual — chip en el pie, justo bajo Ajustes */
+.user-tz {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 11px; border-radius: 8px;
+  font-size: 12px; font-family: var(--mono); color: var(--muted);
+  text-decoration: none; background: var(--glass-2); border: 1px solid var(--border);
+  transition: color var(--dur), border-color var(--dur), background var(--dur);
+}
+.user-tz .tz-line { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.user-tz svg { width: 14px; height: 14px; flex: none; }
+.user-tz span { overflow: hidden; text-overflow: ellipsis; }
+.user-tz:hover { color: var(--text); border-color: var(--glass-border); background: var(--cyan-bg); }
+.user-tz.warn { color: var(--orange); border-color: rgba(255,162,58,0.35); background: var(--orange-bg); }
+.user-tz.warn:hover { color: var(--orange); border-color: var(--orange); }

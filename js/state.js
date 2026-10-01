@@ -1,0 +1,1103 @@
+// State en memoria + sincronización con Firestore.
+// Patrón: actualización local INMEDIATA (síncrona desde la perspectiva del
+// caller) + escritura a Firestore en background (fire-and-forget).
+// Errores de red se loguean pero no rompen el flujo del usuario.
+
+import { uuid } from './utils/uuid.js';
+import { parseTime, durationMinutes } from './utils/date-helpers.js';
+import { sync } from './sync.js';
+import { auth } from './auth.js';
+import { convertTradesTz, DEFAULT_TZ } from './utils/timezone.js';
+import { unidadesRotacion, unidadActiva } from './utils/futures-risk.js';
+
+const SENS_VALID = new Set([
+  'Seguro - Confiado',
+  'Convencido - Calma',
+  'Dudoso - Inseguro',
+  'Fomo - Acelerado',
+  'Venganza - Rabia',
+  'Miedo - Parálisis',
+  'Sin registrar',
+]);
+
+function deriveResult(pnl_pct) {
+  if (pnl_pct == null || isNaN(pnl_pct)) return 'BE';
+  if (pnl_pct > 0.2) return 'TP';
+  if (pnl_pct < -0.2) return 'SL';
+  return 'BE';
+}
+
+// Migración/normalización de valores legacy del campo `entry`. Mapea a la
+// forma canónica actual usada en pills (case-insensitive).
+const ENTRY_CANONICAL = {
+  // ZONAS: legacy → nuevo
+  'stop limit': 'Clásica',
+  'vol': 'Volumen',
+  // ZONAS: case variants del nuevo set
+  'clasica': 'Clásica',
+  'clásica': 'Clásica',
+  'otras': 'Otras',
+  'volumen': 'Volumen',
+  // LIQ/NAS: case variants
+  'bpr': 'BPR',
+  'fvg': 'FVG',
+  'ifvg': 'IFVG',
+  'envol': 'ENVOL',
+  'market': 'MARKET',
+  'limit': 'LIMIT',
+  'choch': 'CHOCH',
+  'bag': 'BAG',
+};
+
+function canonicalEntry(s) {
+  const trimmed = String(s || '').trim();
+  if (!trimmed) return '';
+  return ENTRY_CANONICAL[trimmed.toLowerCase()] || trimmed;
+}
+
+// Migración/normalización del campo `zone`. Mapea valores legacy a la
+// forma canónica actual (case-insensitive).
+const ZONE_CANONICAL = {
+  // ZONAS: legacy '< 7 días' → 'Entre 2 y 7 días' (decisión del usuario)
+  '< 7 días': 'Entre 2 y 7 días',
+  '<7 días':  'Entre 2 y 7 días',
+  // NASDAQ: 'FVG LTF' fue el nombre provisional del FVG de 15 min (solo existió
+  // en el panel de pruebas); el definitivo es 'FVG M15'.
+  'fvg ltf': 'FVG M15',
+};
+
+function canonicalZone(s) {
+  const trimmed = String(s || '').trim();
+  if (!trimmed) return '';
+  return ZONE_CANONICAL[trimmed.toLowerCase()] || ZONE_CANONICAL[trimmed] || trimmed;
+}
+
+// Convierte un valor (string, array, null) a array de strings no vacíos.
+function toStrArr(v) {
+  if (Array.isArray(v)) return v.map(x => String(x || '').trim()).filter(Boolean);
+  if (typeof v === 'string' && v.trim()) return [v.trim()];
+  return [];
+}
+
+function sanitizeTrade(t) {
+  if (!t) return null;
+  const pnl_pct = typeof t.pnl_pct === 'number' ? t.pnl_pct : (parseFloat(t.pnl_pct) || 0);
+  const risk_real_raw = typeof t.risk_real_pct === 'number'
+    ? t.risk_real_pct
+    : (t.risk_real_pct != null && t.risk_real_pct !== '' ? parseFloat(t.risk_real_pct) : NaN);
+  const risk_real_pct = isFinite(risk_real_raw) && risk_real_raw >= 0 ? risk_real_raw : 1;
+  const open_str = t.open_str || '';
+  const close_str = t.close_str || '';
+  // Modelo nuevo: accounts: [{accountId, usdPnl}] — el $ que entra a esa
+  // cuenta queda persistido tal cual. Trades legacy (con `riskPct` y sin
+  // `usdPnl`) se conservan intactos para que `accountUsd()` haga el fallback
+  // — se migran al editar o se siguen leyendo como antes.
+  const accounts = Array.isArray(t.accounts)
+    ? t.accounts
+        .filter(a => a && a.accountId)
+        .map(a => {
+          const out = { accountId: a.accountId };
+          if (typeof a.usdPnl === 'number' && isFinite(a.usdPnl)) {
+            out.usdPnl = a.usdPnl;
+          } else if (typeof a.riskPct === 'number' && a.riskPct > 0) {
+            out.riskPct = a.riskPct;
+          } else {
+            out.riskPct = 1.0;
+          }
+          return out;
+        })
+    : [];
+  return {
+    id: t.id || uuid(),
+    sheet: t.sheet,
+    date: t.date,
+    result: t.result || deriveResult(pnl_pct),
+    pnl_pct,
+    risk_real_pct,
+    // ¿Se ha seguido el trading plan? true / false / null (no registrado)
+    plan_followed: (t.plan_followed === true || t.plan_followed === false) ? t.plan_followed : null,
+    open_hour: t.open_hour != null ? t.open_hour : parseTime(open_str),
+    open_str,
+    close_str,
+    dur: t.dur != null ? t.dur : durationMinutes(open_str, close_str),
+    setup: t.setup || '',
+    pair: t.pair || '',
+    zone: toStrArr(t.zone).map(canonicalZone),
+    entry: toStrArr(t.entry).map(canonicalEntry),
+    // Modelo de entrada (NASDAQ: M1…M4). Opcional: los trades anteriores a este
+    // campo quedan con '' y se muestran como "Sin modelo", sin tocar nada más.
+    model: typeof t.model === 'string' ? t.model : '',
+    rr: t.rr != null ? t.rr : null,
+    pips: t.pips != null ? t.pips : null,
+    sensacion: SENS_VALID.has(t.sensacion) ? t.sensacion : '',
+    url1: t.url1 || '',
+    url2: t.url2 || '',
+    reflexion: t.reflexion || '',
+    accounts,
+    // Huso en el que se escribieron las horas (trades nuevos). Los antiguos no lo
+    // tienen: se resuelve con el perfil de su dueño al mostrarlos.
+    entry_tz: t.entry_tz || null,
+    createdAt: t.createdAt || Date.now(),
+  };
+}
+
+// Sanitizado de BACKTESTS — deliberadamente separado de sanitizeTrade:
+// un backtest NO tiene sensación, plan, riesgo real ni cuentas, y reutilizar
+// sanitizeTrade los reinyectaría con defaults (risk_real_pct:1…) que algún
+// código futuro leería como si significaran algo. kind:'backtest' = tripwire.
+function sanitizeBacktest(t) {
+  if (!t) return null;
+  const pnl_pct = typeof t.pnl_pct === 'number' ? t.pnl_pct : (parseFloat(t.pnl_pct) || 0);
+  const open_str = t.open_str || '';
+  const close_str = t.close_str || '';
+  return {
+    id: t.id || uuid(),
+    kind: 'backtest',
+    sheet: t.sheet,
+    date: t.date,
+    result: t.result || deriveResult(pnl_pct),
+    pnl_pct,
+    open_hour: t.open_hour != null ? t.open_hour : parseTime(open_str),
+    open_str,
+    close_str,
+    dur: t.dur != null ? t.dur : durationMinutes(open_str, close_str),
+    setup: t.setup || '',
+    pair: t.pair || '',
+    zone: toStrArr(t.zone).map(canonicalZone),
+    entry: toStrArr(t.entry).map(canonicalEntry),
+    model: typeof t.model === 'string' ? t.model : '',
+    rr: t.rr != null ? t.rr : null,
+    // Trade NO TOMADO: la señal apareció pero no se entró (se escapó, dudaste,
+    // no estabas delante...). Vive en su propia pestaña de Backtesting y NO cuenta
+    // en las estadísticas de su estrategia: si no se entró, no valida la operativa.
+    not_taken: t.not_taken === true,
+    url1: t.url1 || '',
+    url2: t.url2 || '',
+    // Notas técnicas del backtest (no es la "reflexión" psicológica del journal,
+    // pero se guarda en el mismo campo para reutilizar tabla/modales).
+    reflexion: t.reflexion || t.notas || '',
+    entry_tz: t.entry_tz || null,
+    createdAt: t.createdAt || Date.now(),
+  };
+}
+
+// 'propia': cuenta de CAPITAL PROPIO en un broker (no es prop firm): sin fases,
+// sin coste ni objetivo, y fuera de Contabilidad (que es el negocio prop).
+const VALID_FASE = new Set(['challenge_1', 'challenge_2', 'fondeada', 'propia']);
+const VALID_STATUS = new Set(['activa', 'pausada', 'pasada', 'perdida']);
+const VALID_REFL_TYPE = new Set(['daily', 'weekly', 'monthly']);
+
+function sanitizeCuenta(c) {
+  if (!c) return null;
+  const capital = typeof c.capital === 'number' ? c.capital : (parseFloat(c.capital) || 0);
+  // initialBalance: saldo de la cuenta cuando empezaste a trackearla.
+  // Default = capital nominal (cuenta fresca). Si la cuenta ya tenía profit
+  // antes de meterla aquí, se setea > capital.
+  const initialBalance = c.initialBalance != null
+    ? (typeof c.initialBalance === 'number' ? c.initialBalance : parseFloat(c.initialBalance) || capital)
+    : capital;
+  return {
+    id: c.id || uuid(),
+    empresa: String(c.empresa || '').trim(),
+    tipo: c.tipo === 'Futuros' ? 'Futuros' : 'CFD',
+    numero: String(c.numero || '').trim(),
+    capital,
+    initialBalance,
+    cost: typeof c.cost === 'number' ? c.cost : (parseFloat(c.cost) || 0),
+    targetUsd: c.targetUsd != null ? (typeof c.targetUsd === 'number' ? c.targetUsd : parseFloat(c.targetUsd) || 0) : 0,
+    targetPct: typeof c.targetPct === 'number' ? c.targetPct : (parseFloat(c.targetPct) || 0),  // objetivo como % del capital
+    maxDdUsd: c.maxDdUsd != null ? (typeof c.maxDdUsd === 'number' ? c.maxDdUsd : parseFloat(c.maxDdUsd) || 0) : 0,
+    status: VALID_STATUS.has(c.status) ? c.status : 'activa',
+    fase: VALID_FASE.has(c.fase) ? c.fase : 'challenge_1',
+    numFases: c.numFases === 1 ? 1 : 2,   // nº de fases del challenge (1 ó 2)
+    // Última actividad puesta A MANO ('YYYY-MM-DD'). Manda sobre la fecha del
+    // último trade asignado: sirve para cuentas donde operas sin registrar cada
+    // trade aquí, o para corregir el contador tras un parón justificado.
+    lastActivityOverride: c.lastActivityOverride || null,
+    fundedAt: c.fundedAt || null,         // fecha en que pasó a fondeada (calendario)
+    burnedAt: c.burnedAt || null,         // fecha en que se quemó (calendario)
+    // Fecha de inicio de la FASE actual: el equity/stats solo cuentan los trades
+    // desde aquí (al superar fase se reinicia al capital). Migración: cuentas ya
+    // fondeadas usan su fundedAt como base para que su equity se reinicie también.
+    equityBaseAt: c.equityBaseAt || (c.fase === 'fondeada' ? (c.fundedAt || null) : null),
+    // Momento exacto (ms) del inicio de fase, solo cuando fue un RESET hecho el
+    // mismo día: los trades de ese día registrados ANTES del reset (los que la
+    // quemaron) no cuentan para la cuenta nueva. Sin él, cuenta el día entero.
+    equityBaseTs: typeof c.equityBaseTs === 'number' ? c.equityBaseTs : null,
+    // Registro de hitos de la cuenta (fases superadas / quemada), para dejar
+    // constancia aunque el profit/WR de esa fase ya no se muestre.
+    phaseHistory: Array.isArray(c.phaseHistory) ? c.phaseHistory : [],
+    withdrawals: Array.isArray(c.withdrawals)
+      ? c.withdrawals
+          .filter(w => w && w.amount > 0)
+          .map(w => ({
+            id: w.id || uuid(),
+            date: w.date || new Date().toISOString().substring(0, 10),
+            amount: typeof w.amount === 'number' ? w.amount : (parseFloat(w.amount) || 0),
+            commission: typeof w.commission === 'number' && w.commission >= 0
+              ? w.commission
+              : (parseFloat(w.commission) || 0),
+            note: String(w.note || '').trim(),
+          }))
+      : [],
+    // ── Ajustes de equity: correcciones manuales del saldo actual ──
+    // (trade sin asignar, varianza de cuenta vieja, ajuste del broker…).
+    // amount con signo (±); la fecha determina en qué fase cuenta.
+    adjustments: Array.isArray(c.adjustments)
+      ? c.adjustments
+          .filter(a => a && parseFloat(a.amount))
+          .map(a => ({
+            id: a.id || uuid(),
+            date: a.date || new Date().toISOString().substring(0, 10),
+            amount: typeof a.amount === 'number' ? a.amount : (parseFloat(a.amount) || 0),
+            note: String(a.note || '').trim(),
+          }))
+      : [],
+    notes: String(c.notes || '').trim(),
+    // ── Inversión: historial de compras/reintentos de la cuenta ──
+    purchases: Array.isArray(c.purchases)
+      ? c.purchases.map(sanitizePurchase).filter(Boolean)
+      : [],
+    // ── Módulo de Riesgo/Rotación (escalado por niveles) ──────
+    // Config de riesgo de la cuenta. Defaults retrocompatibles: cuentas viejas
+    // sin estos campos arrancan con el perfil "Estándar" (0,5% × 1,3) en rotación.
+    riesgoBase: numPos(c.riesgoBase, 0.0050),
+    multiplicador: numPos(c.multiplicador, 1.300),
+    perfilId: c.perfilId != null && c.perfilId !== '' ? String(c.perfilId) : null,
+    enRotacion: c.enRotacion === false ? false : true,
+    rotacionOrden: typeof c.rotacionOrden === 'number' ? c.rotacionOrden : (parseFloat(c.rotacionOrden) || 0),
+    // ── Futuros (utils/futures-risk.js) ──
+    // Gestión de riesgo elegida (id de GESTIONES_FUTUROS o de una personalizada
+    // de config.futGestionesCustom). null = sin elegir: se
+    // aplica la conservadora de su fase y la vista pide elegir una.
+    futGestion: c.futGestion ? String(c.futGestion) : null,
+    // Grupo de copiado ('' = cuenta suelta). Las cuentas de un mismo grupo rotan
+    // juntas; cada una conserva su gestión, saldo y drawdown propios.
+    grupo: String(c.grupo || '').trim(),
+    createdAt: c.createdAt || Date.now(),
+  };
+}
+
+const VALID_CONCEPT = new Set(['challenge', 'reset', 'reintento', 'suscripcion', 'activacion', 'otro']);
+
+function sanitizePurchase(p) {
+  if (!p) return null;
+  const amount = typeof p.amount === 'number' ? p.amount : (parseFloat(p.amount) || 0);
+  if (!(amount > 0)) return null;
+  return {
+    id: p.id || uuid(),
+    date: p.date || new Date().toISOString().substring(0, 10),
+    amount,
+    concept: VALID_CONCEPT.has(p.concept) ? p.concept : 'challenge',
+    note: String(p.note || '').trim(),
+  };
+}
+
+// Coerción a número estrictamente positivo, con fallback.
+function numPos(v, fallback) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  return isFinite(n) && n > 0 ? n : fallback;
+}
+
+const PERFIL_ID_RE = /^[A-Za-z0-9_-]+$/;
+
+function sanitizePerfil(p) {
+  if (!p) return null;
+  const nombre = String(p.nombre || '').trim();
+  if (!nombre) return null;
+  const id = p.id && PERFIL_ID_RE.test(p.id) ? p.id : uuid();
+  return {
+    id,
+    nombre,
+    riesgoBase: numPos(p.riesgoBase, 0.0050),
+    multiplicador: numPos(p.multiplicador, 1.300),
+    descripcion: String(p.descripcion || '').trim(),
+  };
+}
+
+// Doc con texto + enlace opcional (Plan de trading y Protocolos comparten forma).
+function sanitizeDocText(p) {
+  p = p || {};
+  const docUrl = String(p.docUrl || '').trim();
+  return {
+    content: String(p.content || ''),
+    docUrl: /^https?:\/\//i.test(docUrl) ? docUrl : '',
+    updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : 0,
+  };
+}
+
+// Un protocolo del alumno: título + texto Markdown + enlace opcional.
+function sanitizeProtocolo(p) {
+  p = p || {};
+  const docUrl = String(p.docUrl || '').trim();
+  return {
+    id: p.id || uuid(),
+    titulo: String(p.titulo || '').trim(),
+    content: String(p.content || ''),
+    docUrl: /^https?:\/\//i.test(docUrl) ? docUrl : '',
+    updatedAt: typeof p.updatedAt === 'number' ? p.updatedAt : 0,
+  };
+}
+
+// Lista de protocolos propios del alumno. Migra el formato antiguo (un único
+// objeto {content,docUrl}) a un array de un elemento para no perder nada.
+function sanitizeProtocolosList(v) {
+  if (Array.isArray(v)) return v.map(sanitizeProtocolo);
+  if (v && (v.content || v.docUrl)) {
+    return [sanitizeProtocolo({ titulo: 'Mi protocolo', content: v.content, docUrl: v.docUrl, updatedAt: v.updatedAt })];
+  }
+  return [];
+}
+
+// El Plan de trading incluye, en el mismo doc, los Protocolos PROPIOS del alumno
+// (array `protocolos`). Así reutilizamos users/{uid}/tradingPlan/data (ya
+// permitido y ya cubierto por los backups) sin crear un doc nuevo.
+function sanitizeTradingPlan(p) {
+  p = p || {};
+  return { ...sanitizeDocText(p), protocolos: sanitizeProtocolosList(p.protocolos) };
+}
+
+function sanitizeReflection(r) {
+  if (!r) return null;
+  if (!VALID_REFL_TYPE.has(r.type)) return null;
+  const period = String(r.period || '').trim();
+  if (!period) return null;
+  return {
+    id: r.id || `${r.type}-${period}`,
+    type: r.type,
+    period,
+    content: String(r.content || ''),
+    updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : Date.now(),
+  };
+}
+
+const listeners = new Set();
+
+function targetUid() {
+  return state.viewAsUid || auth.uid();
+}
+
+// readOnly indica que estás viendo a otro usuario (admin viewAs).
+// Permitimos escrituras siempre (van a viewAsUid), pero las views
+// pueden usar el flag para mostrar avisos "estás editando a X".
+function ignoreIfReadOnly(_action) {
+  return false;
+}
+
+function fireAndForget(p, label) {
+  if (!p || typeof p.then !== 'function') return;
+  p.catch(err => {
+    console.error(`[sync] ${label} falló:`, err);
+    notifySaveError();
+  });
+}
+
+// Aviso visible cuando una escritura a Firestore es RECHAZADA (reglas, cuota,
+// datos inválidos). Antes solo iba a la consola: la UI optimista hacía creer
+// que se guardó. Nota: sin conexión NO salta — Firestore encola y sincroniza
+// al volver la red; esto es solo para rechazos duros.
+let saveErrorVisible = false;
+function notifySaveError() {
+  if (saveErrorVisible) return;   // no apilar toasts si fallan varias seguidas
+  try {
+    saveErrorVisible = true;
+    const el = document.createElement('div');
+    el.className = 'save-error-toast';
+    el.textContent = '⚠ No se pudo guardar en la nube. El cambio podría perderse al recargar — revisa tu sesión o inténtalo de nuevo.';
+    document.body.appendChild(el);
+    setTimeout(() => { el.remove(); saveErrorVisible = false; }, 7000);
+  } catch (e) { saveErrorVisible = false; }
+}
+
+export const state = {
+  trades: [],
+  backtests: [],      // trades de BACKTESTING (users/{uid}/backtests) — NUNCA se mezclan con trades
+  cuentas: [],
+  reflections: [],
+  perfiles: [],       // perfiles de riesgo CUSTOM del usuario (los built-in van en código)
+  config: {},         // preferencias del usuario (users/{uid}/config/data)
+  tradingPlan: {},    // plan de trading del usuario (users/{uid}/tradingPlan/data)
+  viewAsUid: null,    // null = ves tus propios trades; uid = admin viendo a alumno
+  viewAsProfile: null,// perfil del alumno que se está viendo (banner)
+  readOnly: false,    // true cuando viewAsUid != null
+  loading: false,
+
+  // ── Carga inicial / recarga desde Firestore ──────────────
+  async loadFromCloud() {
+    const uid = auth.uid();
+    if (!uid) {
+      this.trades = [];
+      this.backtests = [];
+      this.cuentas = [];
+      this.reflections = [];
+      this.perfiles = [];
+      this.config = {};
+      this.tradingPlan = {};
+      this.emit();
+      return;
+    }
+    this.loading = true;
+    this.emit();
+    try {
+      const [trades, cuentas, reflections, perfiles, config, tradingPlan, backtests] = await Promise.all([
+        sync.loadTrades(uid),
+        sync.loadCuentas(uid),
+        sync.loadReflections(uid),
+        // Colecciones nuevas: si las reglas de Firestore aún no las cubren, no
+        // deben tumbar la carga entera (caen a su valor por defecto).
+        sync.loadPerfiles(uid).catch(() => []),
+        sync.loadConfig(uid).catch(() => ({})),
+        sync.loadTradingPlan(uid).catch(() => ({})),
+        sync.loadBacktests(uid).catch(() => []),
+      ]);
+      // Datos propios: normalmente no-op (los escribiste en tu mismo huso). Solo
+      // convierte si algún trade se metió desde otro país (entry_tz distinto).
+      this.trades = convertTradesTz(
+        trades.map(sanitizeTrade).filter(Boolean),
+        auth.timezone(),
+        auth.timezone(),
+      );
+      this.backtests = convertTradesTz(
+        backtests.map(sanitizeBacktest).filter(Boolean),
+        auth.timezone(),
+        auth.timezone(),
+      );
+      this.cuentas = cuentas.map(sanitizeCuenta).filter(Boolean);
+      this.reflections = reflections.map(sanitizeReflection).filter(Boolean);
+      this.perfiles = perfiles.map(sanitizePerfil).filter(Boolean);
+      this.config = config || {};
+      this.tradingPlan = sanitizeTradingPlan(tradingPlan);
+    } catch (e) {
+      console.error('[state] Error cargando datos:', e);
+      this.trades = [];
+      this.cuentas = [];
+      this.reflections = [];
+      this.perfiles = [];
+      this.config = {};
+      this.tradingPlan = {};
+    }
+    this.loading = false;
+    this.viewAsUid = null;
+    this.viewAsProfile = null;
+    this.readOnly = false;
+    this.emit();
+  },
+
+  // ── Modo impersonation (admin viendo alumno) ─────────────
+  async viewAs(studentUid, profile) {
+    if (!auth.isAdmin()) throw new Error('Solo admin puede ver como alumno');
+    this.loading = true;
+    this.emit();
+    try {
+      const [trades, cuentas, reflections, perfiles, config, tradingPlan, backtests] = await Promise.all([
+        sync.loadStudentTrades(studentUid),
+        sync.loadCuentas(studentUid),
+        sync.loadReflections(studentUid),
+        sync.loadPerfiles(studentUid).catch(() => []),
+        sync.loadConfig(studentUid).catch(() => ({})),
+        sync.loadTradingPlan(studentUid).catch(() => ({})),
+        sync.loadBacktests(studentUid).catch(() => []),
+      ]);
+      // Las horas del alumno se convierten a la hora del ADMIN (auth.timezone()
+      // sobrevive a viewAs). Solo para mostrar: lo guardado no se toca.
+      this.trades = convertTradesTz(
+        trades.map(sanitizeTrade).filter(Boolean),
+        (profile && profile.timezone) || DEFAULT_TZ,
+        auth.timezone(),
+      );
+      this.backtests = convertTradesTz(
+        backtests.map(sanitizeBacktest).filter(Boolean),
+        (profile && profile.timezone) || DEFAULT_TZ,
+        auth.timezone(),
+      );
+      this.cuentas = cuentas.map(sanitizeCuenta).filter(Boolean);
+      this.reflections = reflections.map(sanitizeReflection).filter(Boolean);
+      this.perfiles = perfiles.map(sanitizePerfil).filter(Boolean);
+      this.config = config || {};
+      this.tradingPlan = sanitizeTradingPlan(tradingPlan);
+      this.viewAsUid = studentUid;
+      this.viewAsProfile = profile;
+      this.readOnly = true;
+    } catch (e) {
+      console.error('[state] Error cargando alumno:', e);
+      this.trades = [];
+      this.cuentas = [];
+      this.reflections = [];
+      this.perfiles = [];
+      this.config = {};
+      this.tradingPlan = {};
+    }
+    this.loading = false;
+    this.emit();
+  },
+
+  async exitViewAs() {
+    return this.loadFromCloud();
+  },
+
+  // ── Mutaciones ───────────────────────────────────────────
+  add(trade) {
+    if (ignoreIfReadOnly('add')) return null;
+    const t = sanitizeTrade(trade);
+    if (!t) return null;
+    this.trades.push(t);
+    this.emit();
+    fireAndForget(sync.saveTrade(targetUid(), t), 'saveTrade');
+    return t;
+  },
+
+  // ── Backtests (colección separada — jamás tocan this.trades) ──
+  addBacktest(bt) {
+    const b = sanitizeBacktest(bt);
+    if (!b) return null;
+    this.backtests.push(b);
+    this.emit();
+    fireAndForget(sync.saveBacktest(targetUid(), b), 'saveBacktest');
+    return b;
+  },
+
+  updateBacktest(id, patch) {
+    const i = this.backtests.findIndex(b => b.id === id);
+    if (i < 0) return null;
+    const b = sanitizeBacktest({ ...this.backtests[i], ...patch, id });
+    this.backtests[i] = b;
+    this.emit();
+    fireAndForget(sync.saveBacktest(targetUid(), b), 'saveBacktest');
+    return b;
+  },
+
+  removeBacktest(id) {
+    const i = this.backtests.findIndex(b => b.id === id);
+    if (i < 0) return false;
+    this.backtests.splice(i, 1);
+    this.emit();
+    fireAndForget(sync.deleteBacktest(targetUid(), id), 'deleteBacktest');
+    return true;
+  },
+
+  // Borrado masivo de backtests. Espejo de removeBySheet/replaceAll del journal,
+  // pero SOLO sobre la colección backtests: no puede tocar this.trades.
+  //
+  // Por estrategia se borran los TOMADOS: los no tomados viven en su propia
+  // pestaña y tienen su propio borrado, para que cada botón elimine exactamente
+  // lo que se ve en la sección que representa.
+  removeBacktestsBySheet(sheet) {
+    if (ignoreIfReadOnly('removeBacktestsBySheet')) return 0;
+    const afecta = b => b.sheet === sheet && b.not_taken !== true;
+    const ids = this.backtests.filter(afecta).map(b => b.id);
+    if (!ids.length) return 0;
+    this.backtests = this.backtests.filter(b => !afecta(b));
+    this.emit();
+    fireAndForget(sync.deleteBacktestsBatch(targetUid(), ids), 'deleteBacktestsBatch');
+    return ids.length;
+  },
+
+  removeNotTakenBacktests() {
+    if (ignoreIfReadOnly('removeNotTakenBacktests')) return 0;
+    const ids = this.backtests.filter(b => b.not_taken === true).map(b => b.id);
+    if (!ids.length) return 0;
+    this.backtests = this.backtests.filter(b => b.not_taken !== true);
+    this.emit();
+    fireAndForget(sync.deleteBacktestsBatch(targetUid(), ids), 'deleteBacktestsBatch');
+    return ids.length;
+  },
+
+  // Borra la colección entera en la nube (no solo los que tengamos en memoria:
+  // sync.wipeAllBacktests relee Firestore antes de borrar).
+  wipeAllBacktests() {
+    if (ignoreIfReadOnly('wipeAllBacktests')) return 0;
+    const n = this.backtests.length;
+    this.backtests = [];
+    this.emit();
+    fireAndForget(sync.wipeAllBacktests(targetUid()), 'wipeAllBacktests');
+    return n;
+  },
+
+  // Importación masiva de backtests (Sheet/CSV/rejilla) con dedupe: reimportar
+  // el mismo Sheet no duplica. Misma clave que el journal (sheet|date|open|par|setup).
+  addBacktestsMany(list) {
+    const key = b => `${b.sheet}|${b.date}|${b.open_str}|${b.pair}|${b.setup}`;
+    const existing = new Set(this.backtests.map(key));
+    const added = [];
+    let dup = 0;
+    for (const raw of (list || [])) {
+      const b = sanitizeBacktest(raw);
+      if (!b || !b.sheet || !b.date) continue;
+      const k = key(b);
+      if (existing.has(k)) { dup++; continue; }
+      existing.add(k);
+      this.backtests.push(b);
+      added.push(b);
+    }
+    if (added.length) {
+      this.emit();
+      fireAndForget(sync.saveBacktestsBatch(targetUid(), added), 'saveBacktestsBatch');
+    }
+    return { added: added.length, dup };
+  },
+
+  addMany(trades) {
+    if (ignoreIfReadOnly('addMany')) return { added: 0, dup: 0 };
+    let added = 0, dup = 0;
+    const existing = new Set(this.trades.map(dedupKey));
+    const toUpload = [];
+    for (const t of trades) {
+      const sanitized = sanitizeTrade(t);
+      if (!sanitized || !sanitized.date || !sanitized.sheet) continue;
+      const k = dedupKey(sanitized);
+      if (existing.has(k)) { dup++; continue; }
+      existing.add(k);
+      this.trades.push(sanitized);
+      toUpload.push(sanitized);
+      added++;
+    }
+    this.emit();
+    if (toUpload.length) fireAndForget(sync.saveTradesBatch(targetUid(), toUpload), 'saveTradesBatch');
+    return { added, dup };
+  },
+
+  remove(id) {
+    if (ignoreIfReadOnly('remove')) return;
+    this.trades = this.trades.filter(t => t.id !== id);
+    this.emit();
+    fireAndForget(sync.deleteTrade(targetUid(), id), 'deleteTrade');
+  },
+
+  update(id, patch) {
+    if (ignoreIfReadOnly('update')) return null;
+    const i = this.trades.findIndex(t => t.id === id);
+    if (i < 0) return null;
+    this.trades[i] = sanitizeTrade({ ...this.trades[i], ...patch });
+    this.emit();
+    fireAndForget(sync.saveTrade(targetUid(), this.trades[i]), 'saveTrade(update)');
+    return this.trades[i];
+  },
+
+  removeBySheet(sheet) {
+    if (ignoreIfReadOnly('removeBySheet')) return 0;
+    const before = this.trades.length;
+    this.trades = this.trades.filter(t => t.sheet !== sheet);
+    const removed = before - this.trades.length;
+    this.emit();
+    fireAndForget(sync.removeTradesBySheet(targetUid(), sheet), 'removeTradesBySheet');
+    return removed;
+  },
+
+  // Reemplaza el array entero. Si fromCloud=true, no escribe nada
+  // (acabamos de cargar desde Firestore). Si fromCloud=false (típico
+  // tras "borrar todo" desde Ajustes), escribe el wipe a Firestore.
+  replaceAll(trades, { fromCloud = false } = {}) {
+    if (ignoreIfReadOnly('replaceAll')) return;
+    this.trades = trades.map(sanitizeTrade).filter(Boolean);
+    this.emit();
+    if (!fromCloud) {
+      const uid = targetUid();
+      if (!uid) return;
+      // Wipe + re-upload. Para "borrar todo" trades estará vacío.
+      fireAndForget((async () => {
+        await sync.wipeAllTrades(uid);
+        if (this.trades.length) await sync.saveTradesBatch(uid, this.trades);
+      })(), 'replaceAll');
+    }
+  },
+
+  // ── Cuentas (CRUD optimista) ─────────────────────────────
+  addCuenta(cuenta) {
+    const c = sanitizeCuenta(cuenta);
+    if (!c) return null;
+    this.cuentas.push(c);
+    this.emit();
+    fireAndForget(sync.saveCuenta(targetUid(), c), 'saveCuenta');
+    return c;
+  },
+
+  updateCuenta(id, patch) {
+    const i = this.cuentas.findIndex(c => c.id === id);
+    if (i < 0) return null;
+    this.cuentas[i] = sanitizeCuenta({ ...this.cuentas[i], ...patch });
+    this.emit();
+    fireAndForget(sync.saveCuenta(targetUid(), this.cuentas[i]), 'saveCuenta(update)');
+    return this.cuentas[i];
+  },
+
+  deleteCuenta(id) {
+    // 1. Limpiar referencias en trades (quitar la asignación de esta cuenta)
+    const tradesAffected = [];
+    this.trades.forEach((t, idx) => {
+      if (Array.isArray(t.accounts) && t.accounts.some(a => a.accountId === id)) {
+        const newAccounts = t.accounts.filter(a => a.accountId !== id);
+        this.trades[idx] = { ...t, accounts: newAccounts };
+        tradesAffected.push(this.trades[idx]);
+      }
+    });
+    // 2. Borrar la cuenta del array local
+    this.cuentas = this.cuentas.filter(c => c.id !== id);
+    this.emit();
+    // 3. Persistir en background: borrar cuenta + actualizar trades modificados
+    const uid = targetUid();
+    fireAndForget(sync.deleteCuenta(uid, id), 'deleteCuenta');
+    if (tradesAffected.length) {
+      fireAndForget(sync.saveTradesBatch(uid, tradesAffected), 'saveTradesBatch(deleteCuenta cleanup)');
+    }
+  },
+
+  // ── Ciclo de vida de la cuenta ───────────────────────────
+  // Avanza de fase: challenge_1 → (1 fase ? fondeada : challenge_2) → fondeada.
+  advanceFase(cuentaId) {
+    const c = this.cuentas.find(x => x.id === cuentaId);
+    if (!c) return null;
+    let next = c.fase;
+    if (c.fase === 'challenge_1') next = c.numFases === 1 ? 'fondeada' : 'challenge_2';
+    else if (c.fase === 'challenge_2') next = 'fondeada';
+    else return c; // ya fondeada, o capital propio (sin fases)
+    const today = new Date().toISOString().substring(0, 10);
+    // La nueva fase empieza fresca: el equity vuelve al capital nominal y los
+    // trades/stats solo cuentan desde hoy (equityBaseAt). Se deja constancia del
+    // hito en phaseHistory (aunque el profit/WR de la fase anterior ya no se vea).
+    const patch = {
+      fase: next,
+      status: 'activa',
+      equityBaseAt: today,
+      equityBaseTs: null,
+      initialBalance: c.capital || 0,
+      phaseHistory: [...(c.phaseHistory || []), { type: 'superada', from: c.fase, to: next, date: today }],
+    };
+    if (next === 'fondeada' && !c.fundedAt) patch.fundedAt = today;
+    return this.updateCuenta(cuentaId, patch);
+  },
+
+  // Con reset, una cuenta se puede quemar más de una vez: cada quemada queda en
+  // el historial y burnedAt guarda la última.
+  markQuemada(cuentaId) {
+    const c = this.cuentas.find(x => x.id === cuentaId);
+    const patch = { status: 'perdida' };
+    if (c && c.status !== 'perdida') {
+      const today = new Date().toISOString().substring(0, 10);
+      patch.burnedAt = today;
+      patch.phaseHistory = [...(c.phaseHistory || []), { type: 'quemada', from: c.fase, date: today }];
+    }
+    return this.updateCuenta(cuentaId, patch);
+  },
+
+  // RESET de la cuenta (lo que venden las prop firms para volver a empezar):
+  // el equity vuelve al capital nominal desde `date` (equityBaseAt), la cuenta
+  // queda activa en la fase elegida y el reset queda en el historial. Los trades
+  // anteriores se conservan, pero dejan de contar para el equity/stats de la
+  // cuenta, igual que al superar fase. Si costó dinero, se registra como compra
+  // 'reset' (sale en Contabilidad como inversión).
+  // `ts`: momento del reset, solo si se hace con fecha de hoy (ver equityBaseTs).
+  resetCuenta(cuentaId, { date, cost = 0, fase, ts = null } = {}) {
+    const c = this.cuentas.find(x => x.id === cuentaId);
+    if (!c || c.fase === 'propia') return null;
+    const day = date || new Date().toISOString().substring(0, 10);
+    const to = VALID_FASE.has(fase) && fase !== 'propia' ? fase : c.fase;
+    const importe = parseFloat(cost) > 0 ? parseFloat(cost) : 0;
+    if (importe > 0) this.addPurchase(cuentaId, { date: day, amount: importe, concept: 'reset', note: 'Reset' });
+    const actual = this.cuentas.find(x => x.id === cuentaId);   // addPurchase la ha reemplazado
+    return this.updateCuenta(cuentaId, {
+      fase: to,
+      status: 'activa',
+      equityBaseAt: day,
+      equityBaseTs: typeof ts === 'number' ? ts : null,
+      initialBalance: actual.capital || 0,
+      phaseHistory: [...(actual.phaseHistory || []), { type: 'reset', from: c.fase, to, date: day, cost: importe }],
+    });
+  },
+
+  // Reordena la rotación: asigna rotacionOrden = posición a cada id de la lista.
+  reorderRotacion(orderedIds) {
+    orderedIds.forEach((id, i) => {
+      const c = this.cuentas.find(x => x.id === id);
+      if (c && c.rotacionOrden !== i) this.updateCuenta(id, { rotacionOrden: i });
+    });
+  },
+
+  // Lista de rotación de CFD: cuentas activas en rotación, ordenadas por
+  // rotacionOrden y antigüedad. Las de FUTUROS tienen su propia rotación (por
+  // grupos, ver futures-risk.js): antes compartían esta lista y un SL en una
+  // cuenta de futuros movía la rotación de CFD.
+  rotacionOrdenada() {
+    return (this.cuentas || [])
+      .filter(c => c.status === 'activa' && c.enRotacion !== false && c.tipo !== 'Futuros')
+      .sort((a, b) => (a.rotacionOrden || 0) - (b.rotacionOrden || 0) || (a.createdAt || 0) - (b.createdAt || 0));
+  },
+
+  // Al registrar un SL sobre la cuenta ACTIVA de la rotación, avanza el puntero a
+  // la siguiente cuenta (TP/BE se quedan). Refleja la operativa real del equipo.
+  // ¿Está activa la gestión de riesgo de este tipo ('CFD' | 'Futuros')?
+  // Ajustes → Módulos: desactivada del todo (riskModuleEnabled=false) o
+  // activada para CFD, Futuros o ambos (riskTipos, por defecto ambos). Manda
+  // sobre pestañas, rutas y rotación.
+  riesgoActivo(tipo) {
+    const cfg = this.config || {};
+    if (cfg.riskModuleEnabled === false) return false;
+    const t = cfg.riskTipos || 'ambos';
+    return t === 'ambos' || t === tipo;
+  },
+
+  rotateAfterSL(trade) {
+    if (!trade || trade.result !== 'SL') return;
+    if (this.config && this.config.riskModuleEnabled === false) return;
+    const accts = (trade.accounts || []).map(a => a.accountId).filter(Boolean);
+    if (!accts.length) return;
+
+    // CFD: solo avanza si el SL se asignó a la cuenta que estaba activa.
+    const rot = this.riesgoActivo('CFD') ? this.rotacionOrdenada() : [];
+    if (rot.length >= 2) {
+      const activaId = (this.config && this.config.rotacionActivaId && rot.some(c => c.id === this.config.rotacionActivaId))
+        ? this.config.rotacionActivaId
+        : rot[0].id;
+      if (accts.includes(activaId)) {
+        const idx = rot.findIndex(c => c.id === activaId);
+        const next = rot[(idx + 1) % rot.length];
+        if (next && next.id !== activaId) this.setConfig({ rotacionActivaId: next.id });
+      }
+    }
+
+    // Futuros: por unidades. Avanza si el SL tocó alguna cuenta de la unidad
+    // activa (con copiador, el trade se asigna a todo el grupo).
+    const units = this.riesgoActivo('Futuros')
+      ? unidadesRotacion(this.cuentas, (this.config && this.config.futRotacionOrden) || [])
+      : [];
+    if (units.length >= 2) {
+      const act = unidadActiva(units, this.config && this.config.futRotacionActiva);
+      if (act && act.cuentas.some(c => accts.includes(c.id))) {
+        const next = units[(units.indexOf(act) + 1) % units.length];
+        this.setConfig({ futRotacionActiva: next.key });
+      }
+    }
+  },
+
+  // Salta directamente a Fondeada (sin pasar fase a fase).
+  markFondeada(cuentaId) {
+    const c = this.cuentas.find(x => x.id === cuentaId);
+    if (!c) return null;
+    if (c.fase === 'fondeada' || c.fase === 'propia') return c;
+    const today = new Date().toISOString().substring(0, 10);
+    // Reset de fase: empieza fresca en el capital, stats desde hoy, y hito registrado.
+    const patch = {
+      fase: 'fondeada',
+      status: 'activa',
+      equityBaseAt: today,
+      equityBaseTs: null,
+      initialBalance: c.capital || 0,
+      phaseHistory: [...(c.phaseHistory || []), { type: 'superada', from: c.fase, to: 'fondeada', date: today }],
+    };
+    if (!c.fundedAt) patch.fundedAt = today;
+    return this.updateCuenta(cuentaId, patch);
+  },
+
+  // ── Retiros (siempre dentro de una cuenta) ───────────────
+  addWithdrawal(cuentaId, withdrawal) {
+    const cuenta = this.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return null;
+    const w = {
+      id: withdrawal.id || uuid(),
+      date: withdrawal.date || new Date().toISOString().substring(0, 10),
+      amount: typeof withdrawal.amount === 'number' ? withdrawal.amount : parseFloat(withdrawal.amount) || 0,
+      commission: typeof withdrawal.commission === 'number' && withdrawal.commission >= 0
+        ? withdrawal.commission
+        : (parseFloat(withdrawal.commission) || 0),
+      note: String(withdrawal.note || '').trim(),
+    };
+    if (w.amount <= 0) return null;
+    return this.updateCuenta(cuentaId, {
+      withdrawals: [...(cuenta.withdrawals || []), w],
+    });
+  },
+
+  removeWithdrawal(cuentaId, withdrawalId) {
+    const cuenta = this.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return null;
+    return this.updateCuenta(cuentaId, {
+      withdrawals: (cuenta.withdrawals || []).filter(w => w.id !== withdrawalId),
+    });
+  },
+
+  // ── Ajustes de equity (corrección manual del saldo actual) ──
+  addAjuste(cuentaId, ajuste) {
+    const cuenta = this.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return null;
+    const a = {
+      id: ajuste.id || uuid(),
+      date: ajuste.date || new Date().toISOString().substring(0, 10),
+      amount: typeof ajuste.amount === 'number' ? ajuste.amount : (parseFloat(ajuste.amount) || 0),
+      note: String(ajuste.note || '').trim(),
+    };
+    if (!a.amount) return null;   // un ajuste de 0 no ajusta nada
+    return this.updateCuenta(cuentaId, {
+      adjustments: [...(cuenta.adjustments || []), a],
+    });
+  },
+
+  removeAjuste(cuentaId, ajusteId) {
+    const cuenta = this.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return null;
+    return this.updateCuenta(cuentaId, {
+      adjustments: (cuenta.adjustments || []).filter(a => a.id !== ajusteId),
+    });
+  },
+
+  // ── Compras / reintentos (historial de inversión de la cuenta) ──
+  addPurchase(cuentaId, purchase) {
+    const cuenta = this.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return null;
+    const p = sanitizePurchase(purchase);
+    if (!p) return null;
+    const existing = [...(cuenta.purchases || [])];
+    // Migración: si la cuenta tenía coste legacy y aún no hay compras,
+    // sembrar ese coste como primera compra para no perderlo ni duplicarlo.
+    const patch = {};
+    if (existing.length === 0 && cuenta.cost > 0) {
+      existing.push(sanitizePurchase({
+        date: new Date(cuenta.createdAt || Date.now()).toISOString().substring(0, 10),
+        amount: cuenta.cost,
+        concept: 'challenge',
+        note: 'Coste inicial',
+      }));
+      patch.cost = 0; // el coste ya vive como compra
+    }
+    existing.push(p);
+    patch.purchases = existing;
+    return this.updateCuenta(cuentaId, patch);
+  },
+
+  removePurchase(cuentaId, purchaseId) {
+    const cuenta = this.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return null;
+    return this.updateCuenta(cuentaId, {
+      purchases: (cuenta.purchases || []).filter(p => p.id !== purchaseId),
+    });
+  },
+
+  updatePurchase(cuentaId, purchaseId, patch) {
+    const cuenta = this.cuentas.find(c => c.id === cuentaId);
+    if (!cuenta) return null;
+    const existing = cuenta.purchases || [];
+    const isReal = existing.some(p => p.id === purchaseId);
+    // Compra "legacy": el coste vive en el campo viejo `cost` (no en purchases[]),
+    // se muestra como fila sintética `legacy-<id>`. Al editarla la materializamos
+    // como primera compra real con los valores editados y ponemos cost a 0.
+    if (!isReal) {
+      const p = sanitizePurchase({
+        date: patch.date,
+        amount: patch.amount != null ? patch.amount : cuenta.cost,
+        concept: patch.concept || 'challenge',
+        note: patch.note != null ? patch.note : 'Coste inicial',
+      });
+      if (!p) return null;
+      return this.updateCuenta(cuentaId, { purchases: [p, ...existing], cost: 0 });
+    }
+    const purchases = existing.map(p =>
+      p.id === purchaseId ? (sanitizePurchase({ ...p, ...patch, id: purchaseId }) || p) : p
+    );
+    return this.updateCuenta(cuentaId, { purchases });
+  },
+
+  // ── Reflexiones de psicología ────────────────────────────
+  saveReflection(type, period, content) {
+    if (!VALID_REFL_TYPE.has(type) || !period) return null;
+    const id = `${type}-${period}`;
+    const r = sanitizeReflection({ id, type, period, content, updatedAt: Date.now() });
+    if (!r) return null;
+    const i = this.reflections.findIndex(x => x.id === id);
+    if (i >= 0) this.reflections[i] = r;
+    else this.reflections.push(r);
+    this.emit();
+    fireAndForget(sync.saveReflection(targetUid(), r), 'saveReflection');
+    return r;
+  },
+
+  deleteReflection(id) {
+    const before = this.reflections.length;
+    this.reflections = this.reflections.filter(r => r.id !== id);
+    if (this.reflections.length === before) return;
+    this.emit();
+    fireAndForget(sync.deleteReflection(targetUid(), id), 'deleteReflection');
+  },
+
+  // ── Perfiles de riesgo (CRUD optimista) ──────────────────
+  addPerfil(perfil) {
+    const p = sanitizePerfil(perfil);
+    if (!p) return null;
+    this.perfiles.push(p);
+    this.emit();
+    fireAndForget(sync.savePerfil(targetUid(), p), 'savePerfil');
+    return p;
+  },
+
+  updatePerfil(id, patch) {
+    const i = this.perfiles.findIndex(p => p.id === id);
+    if (i < 0) return null;
+    this.perfiles[i] = sanitizePerfil({ ...this.perfiles[i], ...patch, id });
+    this.emit();
+    fireAndForget(sync.savePerfil(targetUid(), this.perfiles[i]), 'savePerfil(update)');
+    return this.perfiles[i];
+  },
+
+  deletePerfil(id, { keepAssignments = false } = {}) {
+    // Desasignar el perfil de cualquier cuenta que lo use (espejo del PHP).
+    // keepAssignments=true al "restaurar" un preset: la cuenta sigue apuntando
+    // al preset, que vuelve a sus valores por defecto al quitar el override.
+    const cuentasAfectadas = [];
+    if (!keepAssignments) {
+      this.cuentas.forEach((c, idx) => {
+        if (c.perfilId === id) {
+          this.cuentas[idx] = sanitizeCuenta({ ...c, perfilId: null });
+          cuentasAfectadas.push(this.cuentas[idx]);
+        }
+      });
+    }
+    this.perfiles = this.perfiles.filter(p => p.id !== id);
+    this.emit();
+    const uid = targetUid();
+    fireAndForget(sync.deletePerfil(uid, id), 'deletePerfil');
+    cuentasAfectadas.forEach(c => fireAndForget(sync.saveCuenta(uid, c), 'saveCuenta(deletePerfil cleanup)'));
+  },
+
+  // ── Config del usuario (merge optimista) ─────────────────
+  setConfig(patch) {
+    this.config = { ...this.config, ...patch };
+    this.emit();
+    fireAndForget(sync.saveConfig(targetUid(), patch), 'saveConfig');
+    return this.config;
+  },
+
+  // Mapa id→cuenta del contexto actual (propio o alumno en viewAs). Lo usan los
+  // cálculos de "P&L real" ponderado por capital.
+  cuentaMap() {
+    return new Map(this.cuentas.map(c => [c.id, c]));
+  },
+
+  // ── Plan de trading (merge optimista) ────────────────────
+  saveTradingPlan(patch) {
+    const next = sanitizeTradingPlan({ ...this.tradingPlan, ...patch });
+    this.tradingPlan = next;
+    this.emit();
+    fireAndForget(sync.saveTradingPlan(targetUid(), next), 'saveTradingPlan');
+    return next;
+  },
+
+  // Protocolos propios del alumno (lista dentro del doc del Plan).
+  _protocolos() { return (this.tradingPlan && Array.isArray(this.tradingPlan.protocolos)) ? this.tradingPlan.protocolos : []; },
+  addProtocolo(data) {
+    const p = sanitizeProtocolo({ ...data, updatedAt: Date.now() });
+    return this.saveTradingPlan({ protocolos: [...this._protocolos(), p] });
+  },
+  updateProtocolo(id, patch) {
+    const list = this._protocolos().map(p =>
+      p.id === id ? sanitizeProtocolo({ ...p, ...patch, id, updatedAt: Date.now() }) : p);
+    return this.saveTradingPlan({ protocolos: list });
+  },
+  removeProtocolo(id) {
+    return this.saveTradingPlan({ protocolos: this._protocolos().filter(p => p.id !== id) });
+  },
+
+  // ── Bus de eventos ───────────────────────────────────────
+  on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+  emit() { listeners.forEach(fn => { try { fn(); } catch (e) { console.error(e); } }); },
+};
+
+function dedupKey(t) {
+  return `${t.sheet}|${t.date}|${t.open_str || ''}|${t.pair || ''}|${t.setup || ''}`;
+}

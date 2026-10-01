@@ -1,0 +1,389 @@
+import { formatDateShort } from '../utils/date-helpers.js';
+import { fmtPct } from '../utils/number-format-es.js';
+import { sortChrono, tradeRealPnl } from '../utils/calculations.js';
+import { openModal } from './modal.js';
+import { openViewTradeModal } from './trade-view-modal.js';
+import { openEditTradeModal } from './trade-edit-modal.js';
+import { state } from '../state.js';
+import { accountUsd, fmtUsd } from '../utils/account-stats.js';
+import { STRATEGIES, modelLabel } from '../utils/strategy-config.js';
+
+// ¿La estrategia del trade usa modelos de entrada? (hoy solo Nasdaq)
+const tieneModelos = t => !!(STRATEGIES[t.sheet] && STRATEGIES[t.sheet].models);
+
+const STRAT_LABEL = { ZONAS: 'Zonas', LIQUIDEZ: 'Liquidez', NASDAQ: 'Nasdaq' };
+const STRAT_CLS = { ZONAS: 'zonas', LIQUIDEZ: 'liquidez', NASDAQ: 'nasdaq' };
+
+// ── Fila marcada ("dónde iba") ───────────────────────────────
+// Al revisar trades uno a uno hay que ir recordando por cuál se iba. Se marca
+// una fila, como la celda activa de Excel, y la marca sobrevive a repintados,
+// a cambios de filtro y a recargar la página (por eso va a localStorage y no a
+// una variable). Es un id de trade: si no está en la tabla que se pinta, no se
+// ve nada — así vale para estrategias, calendario y backtesting a la vez.
+const MARK_KEY = 'tradinverso_marked_trade';
+
+function getMarked() {
+  try { return localStorage.getItem(MARK_KEY) || ''; } catch (e) { return ''; }
+}
+function setMarked(id) {
+  try {
+    if (id) localStorage.setItem(MARK_KEY, id);
+    else localStorage.removeItem(MARK_KEY);
+  } catch (e) { /* modo privado: la marca dura lo que la sesión */ }
+}
+
+export function renderTradeTable(container, trades, opts = {}) {
+  // variant 'backtest': oculta columnas de Sens./Plan/Cuentas/% real y el filtro
+  // de Plan (que no se auto-oculta). onView/onDelete permiten redirigir las
+  // acciones a otro almacén — imprescindible para backtests: el flujo por
+  // defecto (ver→editar→state.update) escribiría en el journal REAL.
+  const {
+    canDelete = false, emptyMsg = 'No hay trades.', showFilters = true,
+    variant = 'journal',
+    showPlanFilter = variant !== 'backtest',
+    onView = openViewTradeModal,
+    onDelete = id => state.remove(id),
+    onEdit = null,
+  } = opts;
+  const isBacktest = variant === 'backtest';
+  // Doble clic en una fila = editar directamente. En backtests SOLO con el
+  // editor que pase la vista (opts.onEdit): el de por defecto es el del journal
+  // real y escribiría ahí. Sin editor, el doble clic abre la ficha.
+  const editar = onEdit || (isBacktest ? onView : openEditTradeModal);
+
+  if (!trades.length) {
+    container.innerHTML = `<div class="empty"><div>${emptyMsg}</div></div>`;
+    return;
+  }
+
+  // Detectar qué filtros tiene sentido mostrar según los datos
+  const sheets = [...new Set(trades.map(t => t.sheet))];
+  const setups = [...new Set(trades.map(t => t.setup).filter(Boolean))];
+  const pairs = [...new Set(trades.map(t => t.pair).filter(Boolean))];
+  const zones = [...new Set(trades.flatMap(t => Array.isArray(t.zone) ? t.zone : (t.zone ? [t.zone] : [])).filter(Boolean))].sort();
+  const entries = [...new Set(trades.flatMap(t => Array.isArray(t.entry) ? t.entry : (t.entry ? [t.entry] : [])).filter(Boolean))].sort();
+  const sensaciones = [...new Set(trades.map(t => t.sensacion).filter(Boolean))];
+  // Modelos de entrada: columna y filtro solo si hay trades de una estrategia
+  // que los usa (Nasdaq). '' = sin modelo (trades anteriores al campo).
+  const conModelos = trades.some(tieneModelos);
+  const models = [...new Set(trades.filter(tieneModelos).map(t => t.model || ''))]
+    .sort((a, b) => (a === '') - (b === '') || a.localeCompare(b));
+  const accountIds = [...new Set(trades.flatMap(t =>
+    Array.isArray(t.accounts) ? t.accounts.map(a => a.accountId) : []
+  ))];
+
+  // Estado de filtros (privado al componente)
+  let filters = {
+    sheet: 'all', result: 'all', setup: 'all',
+    pair: 'all', zone: 'all', entry: 'all', model: 'all',
+    sens: 'all', account: 'all', plan: 'all',
+  };
+
+  function applyFilters() {
+    return trades.filter(t => {
+      if (filters.sheet !== 'all' && t.sheet !== filters.sheet) return false;
+      if (filters.result !== 'all' && t.result !== filters.result) return false;
+      if (filters.setup !== 'all' && t.setup !== filters.setup) return false;
+      if (filters.pair !== 'all' && t.pair !== filters.pair) return false;
+      if (filters.zone !== 'all') {
+        const zones = Array.isArray(t.zone) ? t.zone : (t.zone ? [t.zone] : []);
+        if (!zones.includes(filters.zone)) return false;
+      }
+      if (filters.entry !== 'all') {
+        const entries = Array.isArray(t.entry) ? t.entry : (t.entry ? [t.entry] : []);
+        if (!entries.includes(filters.entry)) return false;
+      }
+      if (filters.model !== 'all' && (!tieneModelos(t) || (t.model || '') !== filters.model)) return false;
+      if (filters.sens !== 'all') {
+        if (filters.sens === '_empty' && t.sensacion) return false;
+        if (filters.sens !== '_empty' && t.sensacion !== filters.sens) return false;
+      }
+      if (filters.account !== 'all') {
+        const has = Array.isArray(t.accounts)
+          && t.accounts.some(a => a.accountId === filters.account);
+        if (filters.account === '_none') {
+          if (Array.isArray(t.accounts) && t.accounts.length > 0) return false;
+        } else if (!has) return false;
+      }
+      if (filters.plan !== 'all') {
+        if (filters.plan === 'yes' && t.plan_followed !== true) return false;
+        if (filters.plan === 'no'  && t.plan_followed !== false) return false;
+        if (filters.plan === '_none' && (t.plan_followed === true || t.plan_followed === false)) return false;
+      }
+      return true;
+    });
+  }
+
+  function paint() {
+    const filtered = applyFilters();
+    const filterBar = showFilters ? renderFilterBar(filtered.length) : '';
+    const tableHtml = renderTable(filtered);
+    container.innerHTML = filterBar + tableHtml;
+    if (showFilters) wireFilters();
+    wireRowActions(filtered);
+  }
+
+  function renderFilterBar(filteredCount) {
+    const showSheet = sheets.length > 1;
+    const showSetup = setups.length > 1;
+    const showPair = pairs.length > 1;
+    const showZone = zones.length > 1;
+    const showEntry = entries.length > 1;
+    const showModel = models.length > 1;
+    const showSens = sensaciones.length > 0;
+    const showAccount = accountIds.length > 0;
+    const hasActiveFilters = Object.values(filters).some(v => v !== 'all');
+
+    return `
+      <div class="filter-bar">
+        ${showSheet ? sel('sheet', filters.sheet, [
+          { v: 'all', l: 'Todas las estrategias' },
+          ...sheets.map(s => ({ v: s, l: STRAT_LABEL[s] || s })),
+        ]) : ''}
+        ${sel('result', filters.result, [
+          { v: 'all', l: 'Todos los resultados' },
+          { v: 'TP', l: 'Solo TP' },
+          { v: 'SL', l: 'Solo SL' },
+          { v: 'BE', l: 'Solo BE' },
+        ])}
+        ${showSetup ? sel('setup', filters.setup, [
+          { v: 'all', l: 'Todas las direcciones' },
+          ...setups.map(s => ({ v: s, l: s })),
+        ]) : ''}
+        ${showPair ? sel('pair', filters.pair, [
+          { v: 'all', l: 'Todos los pares' },
+          ...pairs.map(p => ({ v: p, l: p })),
+        ]) : ''}
+        ${showModel ? sel('model', filters.model, [
+          { v: 'all', l: 'Todos los modelos' },
+          ...models.map(m => ({ v: m, l: modelLabel(m) })),
+        ]) : ''}
+        ${showZone ? sel('zone', filters.zone, [
+          { v: 'all', l: 'Todas las zonas' },
+          ...zones.map(z => ({ v: z, l: z })),
+        ]) : ''}
+        ${showEntry ? sel('entry', filters.entry, [
+          { v: 'all', l: 'Todas las entradas' },
+          ...entries.map(e => ({ v: e, l: e })),
+        ]) : ''}
+        ${showSens ? sel('sens', filters.sens, [
+          { v: 'all', l: 'Todas las sensaciones' },
+          ...sensaciones.map(s => ({ v: s, l: s })),
+          { v: '_empty', l: '— Sin sensación —' },
+        ]) : ''}
+        ${showAccount ? sel('account', filters.account, [
+          { v: 'all', l: 'Todas las cuentas' },
+          ...accountIds.map(id => {
+            const c = state.cuentas.find(x => x.id === id);
+            return { v: id, l: c ? `${c.empresa} ${capShort(c.capital)}` : '?' };
+          }),
+          { v: '_none', l: '— Sin asignar —' },
+        ]) : ''}
+        ${showPlanFilter ? sel('plan', filters.plan, [
+          { v: 'all', l: 'Plan: todos' },
+          { v: 'yes', l: '✓ Dentro del plan' },
+          { v: 'no',  l: '✗ Fuera del plan' },
+          { v: '_none', l: '— Sin marcar —' },
+        ]) : ''}
+        ${hasActiveFilters ? '<button class="btn ghost" data-clear-filters>× Limpiar filtros</button>' : ''}
+        <span class="filter-count">${filteredCount} de ${trades.length} trades</span>
+      </div>
+    `;
+  }
+
+  function sel(name, value, options) {
+    return `<select class="select filter-select" data-filter="${name}">
+      ${options.map(o => `<option value="${o.v}" ${o.v === value ? 'selected' : ''}>${escAttr(o.l)}</option>`).join('')}
+    </select>`;
+  }
+
+  function renderTable(filtered) {
+    // Más reciente arriba: ordenamos cronológicamente y luego invertimos.
+    const sorted = sortChrono(filtered).reverse();
+    const colspan = (isBacktest ? 11 : 15) + (canDelete ? 1 : 0) + (conModelos ? 1 : 0);
+    const bodyContent = sorted.length
+      ? sorted.map(t => row(t, canDelete, isBacktest, getMarked(), conModelos)).join('')
+      : `<tr><td colspan="${colspan}" class="empty" style="padding:30px;">Ningún trade coincide con los filtros</td></tr>`;
+    return `
+      <div class="trade-table-wrap">
+        <table class="trade-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Fecha</th>
+              <th>Hora</th>
+              <th>Estrategia</th>
+              <th>Activo</th>
+              <th>Setup</th>
+              ${conModelos ? '<th>Modelo</th>' : ''}
+              <th>Zona</th>
+              <th>Entrada</th>
+              ${isBacktest ? '' : `
+              <th>Sens. al ejecutar</th>
+              <th>Plan</th>
+              <th>Cuentas</th>`}
+              <th>Resultado</th>
+              <th>Dur.</th>
+              <th>% P&L${isBacktest ? '' : ' sistema'}</th>
+              ${isBacktest ? '' : '<th>% P&L real</th>'}
+              ${canDelete ? '<th></th>' : ''}
+            </tr>
+          </thead>
+          <tbody>${bodyContent}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function wireFilters() {
+    container.querySelectorAll('[data-filter]').forEach(s => {
+      s.addEventListener('change', () => {
+        filters[s.dataset.filter] = s.value;
+        paint();
+      });
+    });
+    const clear = container.querySelector('[data-clear-filters]');
+    if (clear) clear.addEventListener('click', () => {
+      filters = {
+        model: 'all',
+        sheet: 'all', result: 'all', setup: 'all',
+        pair: 'all', zone: 'all', entry: 'all',
+        sens: 'all', account: 'all', plan: 'all',
+      };
+      paint();
+    });
+  }
+
+  function wireRowActions(filtered) {
+    // Pinta la marca sin re-renderizar: un repintado completo perdería el scroll
+    // justo cuando el usuario está recorriendo la lista.
+    function paintMark() {
+      const id = getMarked();
+      container.querySelectorAll('tr[data-row-id]').forEach(tr => {
+        tr.classList.toggle('row-marked', tr.dataset.rowId === id);
+      });
+    }
+
+    container.querySelectorAll('tr[data-row-id]').forEach(tr => {
+      tr.addEventListener('click', e => {
+        // Los botones de la fila (ver / borrar) tienen lo suyo.
+        if (e.target.closest('button')) return;
+        const id = tr.dataset.rowId;
+        setMarked(getMarked() === id ? '' : id);   // volver a pulsar la desmarca
+        paintMark();
+      });
+      // Doble clic: abre el trade para editarlo. Los dos clics previos ponen y
+      // quitan la marca; aquí se deja puesta (es el trade con el que estás).
+      tr.addEventListener('dblclick', e => {
+        if (e.target.closest('button')) return;
+        const t = filtered.find(x => x.id === tr.dataset.rowId);
+        if (!t) return;
+        window.getSelection?.().removeAllRanges();   // el doble clic selecciona texto
+        setMarked(t.id);
+        paintMark();
+        editar(t);
+      });
+    });
+
+    container.querySelectorAll('.view-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        const id = b.dataset.id;
+        const t = filtered.find(x => x.id === id);
+        if (!t) return;
+        setMarked(id);      // el trade que abres es por el que ibas
+        paintMark();
+        onView(t);
+      });
+    });
+
+    if (canDelete) {
+      container.querySelectorAll('.del-btn').forEach(b => {
+        b.addEventListener('click', () => {
+          const id = b.dataset.id;
+          openModal({
+            title: 'Eliminar trade',
+            body: '¿Seguro que quieres eliminar este trade? Esta acción no se puede deshacer.',
+            actions: [
+              { label: 'Cancelar', onClick: close => close() },
+              { label: 'Eliminar', variant: 'danger', onClick: close => { onDelete(id); close(); } },
+            ],
+          });
+        });
+      });
+    }
+  }
+
+  paint();
+}
+
+function row(t, canDelete, isBacktest = false, markedId = '', conModelos = false) {
+  const sens = t.sensacion ? `<span class="sens-pill" data-s="${t.sensacion}">${t.sensacion}</span>` : '<span style="color:var(--dim)">–</span>';
+
+  // Cuentas: solo la primera + "+N" si hay más. El detalle completo se ve en el modal del ojo.
+  function badgeFor(a) {
+    const c = state.cuentas.find(x => x.id === a.accountId);
+    const label = c ? (c.empresa.substring(0, 4).toUpperCase() + (c.capital >= 1000 ? Math.round(c.capital / 1000) + 'K' : '')) : '?';
+    const usd = accountUsd(t, a, c ? c.capital : 0);
+    const title = c ? `${c.empresa} ${c.numero || ''} · ${fmtUsd(usd, true)}` : 'Cuenta no encontrada';
+    return `<span class="acc-badge" title="${escAttr(title)}">${label}</span>`;
+  }
+  let cuentas;
+  if (Array.isArray(t.accounts) && t.accounts.length) {
+    if (t.accounts.length === 1) {
+      cuentas = badgeFor(t.accounts[0]);
+    } else {
+      const first = badgeFor(t.accounts[0]);
+      const extra = t.accounts.length - 1;
+      const restNames = t.accounts.slice(1).map(a => {
+        const cc = state.cuentas.find(x => x.id === a.accountId);
+        const usd = accountUsd(t, a, cc ? cc.capital : 0);
+        return cc ? `${cc.empresa} ${capShort(cc.capital)}${cc.numero ? ' #' + cc.numero : ''} · ${fmtUsd(usd, true)}` : '?';
+      }).join('\n');
+      cuentas = `${first}<span class="acc-badge acc-more" title="${escAttr(restNames)}">+${extra}</span>`;
+    }
+  } else {
+    cuentas = '<span style="color:var(--dim)">–</span>';
+  }
+  const dur = t.dur != null ? t.dur + 'm' : '–';
+  const pct = t.result === 'BE' ? '<span style="color:var(--orange)">0.00%</span>' : `<span style="color:${t.pnl_pct >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtPct(t.pnl_pct)}</span>`;
+  const realPnl = tradeRealPnl(t);
+  const pctReal = t.result === 'BE'
+    ? '<span style="color:var(--orange)">0.00%</span>'
+    : `<span style="color:${realPnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtPct(realPnl)}</span>`;
+  const viewBtn = `<button class="view-btn" data-id="${t.id}" title="Ver trade completo">👁️</button>`;
+  const delTd = canDelete
+    ? `<td><button class="btn ghost danger del-btn" data-id="${t.id}" style="padding:4px 8px;font-size:11px;">×</button></td>`
+    : '';
+  return `
+    <tr data-row-id="${t.id}" class="${t.id === markedId ? 'row-marked' : ''}" title="Clic: marcar · Doble clic: editar">
+      <td>${viewBtn}</td>
+      <td>${isBacktest ? formatDateShort(t.date) + '/' + String(t.date || '').substring(2, 4) : formatDateShort(t.date)}</td>
+      <td>${t.open_str || '–'}</td>
+      <td><span class="strat-pill ${STRAT_CLS[t.sheet]}">${STRAT_LABEL[t.sheet] || t.sheet}</span></td>
+      <td>${t.pair || '–'}</td>
+      <td>${t.setup || '–'}</td>
+      ${conModelos ? `<td>${tieneModelos(t)
+        ? (t.model ? modelLabel(t.model) : '<span style="color:var(--muted);">Sin modelo</span>')
+        : '–'}</td>` : ''}
+      <td>${(Array.isArray(t.zone) ? t.zone.join(' · ') : t.zone) || '–'}</td>
+      <td>${(Array.isArray(t.entry) ? t.entry.join(' · ') : t.entry) || '–'}</td>
+
+      ${isBacktest ? '' : `
+      <td>${sens}</td>
+      <td class="td-plan">${t.plan_followed === true ? '<span class="plan-icon-yes" title="Dentro del plan">✓</span>' : t.plan_followed === false ? '<span class="plan-icon-no" title="Fuera del plan">✗</span>' : '<span class="plan-icon-na" title="No registrado">–</span>'}</td>
+      <td>${cuentas}</td>`}
+      <td><span class="res-pill res-${t.result.toLowerCase()}">${t.result}</span></td>
+      <td>${dur}</td>
+      <td>${pct}</td>
+      ${isBacktest ? '' : `<td>${pctReal}</td>`}
+      ${delTd}
+    </tr>
+  `;
+}
+
+function capShort(c) {
+  if (c >= 1000) { const k = c / 1000; return (k % 1 === 0 ? k : +k.toFixed(1)) + 'K'; }
+  return String(c);
+}
+
+function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
