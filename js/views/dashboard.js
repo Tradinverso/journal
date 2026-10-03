@@ -23,12 +23,24 @@ import {
 } from '../components/period-filter.js';
 import { SHEETS, MULTI_SHEET, hasSheet } from '../edition.js';
 import { STRATEGIES } from '../utils/strategy-config.js';
+import { renderTradeTable } from '../components/trade-table.js';
+import {
+  filtro as stFiltro, filtrosHtml as stFiltrosHtml, wireFiltros as stWireFiltros,
+  periodoFiltro, resetFiltros, detalleHtml, paintDetalle,
+} from './strategy.js';
 
 const STRAT_LABELS = { ZONAS: 'Forex + Oro', LIQUIDEZ: 'EUR/USD', NASDAQ: 'NQ Futuros' };
 const STRAT_CLS = { ZONAS: 'zonas', LIQUIDEZ: 'liquidez', NASDAQ: 'nasdaq' };
 // Con una sola estrategia (edición Nasdaq), "Global" y "Nasdaq" son lo mismo:
 // sobran las tarjetas por estrategia, la tabla de pares (siempre NQ) y las
 // columnas duplicadas.
+//
+// UNIFICADO (edición Nasdaq): el Dashboard ES también el análisis de la
+// estrategia — no hay vista "Nasdaq" aparte. Usa los filtros de esa vista
+// (meses, dirección, modelo, zona, entrada, resultado; strategy.js) sobre todo
+// el panel y añade sus secciones (por zona/entrada/modelo, long/short,
+// distribución TP/SL/BE y la tabla de trades).
+const UNIFICADO = !MULTI_SHEET;
 
 let dashPeriod = newPeriod();   // rango de meses { from, to }
 let perfMode = 'sistema'; // 'sistema' | 'real'
@@ -42,10 +54,13 @@ function render(container) {
   // Si no, filtrarían en silencio con el select mostrando "Todos".
   const userKey = state.viewAsUid || 'self';
   if (userKey !== lastUserKey) {
-    if (lastUserKey !== null) dashPeriod = newPeriod();
+    if (lastUserKey !== null) { dashPeriod = newPeriod(); if (UNIFICADO) resetFiltros(); }
     lastUserKey = userKey;
   }
-  clampPeriod(dashPeriod, monthsOf(allTrades));
+  // Periodo activo: el propio del Dashboard o, unificado, el de los filtros de
+  // la estrategia (strategy.js).
+  const sel = UNIFICADO ? periodoFiltro() : dashPeriod;
+  clampPeriod(sel, monthsOf(allTrades));
 
   if (!allTrades.length) {
     container.innerHTML = impersonationBanner() + (state.loading ? loadingState() : emptyState());
@@ -53,15 +68,35 @@ function render(container) {
     return;
   }
 
-  const filtered = filterTrades(allTrades, dashPeriod);
-  container.innerHTML = impersonationBanner() + renderShell(allTrades, filtered);
+  const filtered = UNIFICADO ? stFiltro(allTrades) : filterTrades(allTrades, dashPeriod);
+  // Mismos filtros pero sin el de meses: para comparar con el periodo anterior
+  // y para el gráfico mensual (que nunca se estrecha a un mes).
+  const base = UNIFICADO ? stFiltro(allTrades, { sinPeriodo: true }) : allTrades;
+
+  // Unificado con trades pero ninguno que pase los filtros.
+  if (UNIFICADO && !filtered.length) {
+    container.innerHTML = impersonationBanner() + `
+      ${headerHtml(allTrades, filtered, sel)}
+      <div class="empty">
+        <div class="big">🔍</div>
+        <div>Ningún trade pasa esos filtros. Ajústalos arriba o límpialos.</div>
+      </div>`;
+    wireImpersonation(container);
+    stWireFiltros(container, () => render(container));
+    const chk = container.querySelector('#semaforoChk');
+    if (chk) chk.addEventListener('click', () => openChecklistModal(container));
+    return;
+  }
+
+  container.innerHTML = impersonationBanner() + renderShell(allTrades, filtered, sel);
   wireImpersonation(container);
 
   // Semáforo "Checklist pendiente": pulsable → abre el modal del checklist
   const chkBtn = container.querySelector('#semaforoChk');
   if (chkBtn) chkBtn.addEventListener('click', () => openChecklistModal(container));
 
-  wirePeriod(container, dashPeriod, () => render(container), { idFrom: 'dashFrom', idTo: 'dashTo' });
+  if (UNIFICADO) stWireFiltros(container, () => render(container));
+  else wirePeriod(container, dashPeriod, () => render(container), { idFrom: 'dashFrom', idTo: 'dashTo' });
 
   // Toggle Sistema/Real
   const perfToggleEl = container.querySelector('#perfToggle');
@@ -75,9 +110,13 @@ function render(container) {
   }
 
   // KPIs y tablas (HTML puro) se pintan ya.
-  paintKpis(container, filtered, allTrades);
+  paintKpis(container, filtered, base, sel);
   paintStreaks(container, filtered);
   paintDurations(container, filtered);
+  if (UNIFICADO) {
+    paintDetalle(container, filtered, STRATEGIES[SHEETS[0]]);
+    renderTradeTable(container.querySelector('#tradeTable'), filtered, { canDelete: true });
+  }
 
   // Gráficos (Chart.js): en el siguiente frame, cuando el layout del contenedor
   // ya está calculado. Crearlos en el mismo tick que el innerHTML provoca que a
@@ -85,10 +124,16 @@ function render(container) {
   requestAnimationFrame(() => {
     if (!container.querySelector('#equityChart')) return; // la vista cambió
     paintEquity(container, filtered);
-    paintMonthly(container, allTrades);
+    paintMonthly(container, base, sel);
     if (MULTI_SHEET) SHEETS.forEach(s => paintStrategy(container, s, filtered));
     paintTiming(container, filtered);
-    paintDirectionAndPairs(container, filtered);
+    if (UNIFICADO) {
+      // Long/short lo pinta paintDetalle; aquí solo la distribución TP/SL/BE.
+      const c = tradeCounts(filtered);
+      createDonut(container.querySelector('#donut'), c.tp, c.sl, c.be);
+    } else {
+      paintDirectionAndPairs(container, filtered);
+    }
   });
 }
 
@@ -194,7 +239,9 @@ function trend(curr, prev, ref, { unit = 'pp', lowerIsBetter = false } = {}) {
 }
 
 // ── Shell HTML ───────────────────────────────────────────────
-function renderShell(allTrades, filtered) {
+// Cabecera: nombre, nº de trades y fechas, checklist y semáforo. Unificado,
+// además, la fila de filtros de la estrategia; si no, solo el de meses.
+function headerHtml(allTrades, filtered, sel) {
   const months = monthsOf(allTrades);
   const dates = filtered.map(t => t.date).sort();
   const first = dates.length ? formatDateShort(dates[0]) : '';
@@ -202,18 +249,27 @@ function renderShell(allTrades, filtered) {
   const userName = state.viewAsUid && state.viewAsProfile
     ? (state.viewAsProfile.nombre || state.viewAsProfile.email.split('@')[0])
     : auth.displayName();
+  const nTrades = UNIFICADO && filtered.length !== allTrades.length
+    ? `${filtered.length} de ${allTrades.length}`
+    : filtered.length;
   return `
     <div class="page-header">
       <div>
         <h1>Dashboard${userName ? ` <span style="color:var(--muted);font-weight:400;">·</span> <span style="color:var(--text);font-weight:500;">${escapeHtml(userName)}</span>` : ''}</h1>
-        <div class="sub">${filtered.length} trades · ${first} → ${last}</div>
+        <div class="sub">${nTrades} trades${dates.length ? ` · ${first} → ${last}` : ''}</div>
       </div>
       <div class="page-actions">
-        ${periodHtml(months, dashPeriod, { idFrom: 'dashFrom', idTo: 'dashTo' })}
+        ${UNIFICADO ? '' : periodHtml(months, sel, { idFrom: 'dashFrom', idTo: 'dashTo' })}
         ${checklistChip()}
         ${semaforoPill(allTrades)}
       </div>
-    </div>
+      ${UNIFICADO ? stFiltrosHtml(allTrades) : ''}
+    </div>`;
+}
+
+function renderShell(allTrades, filtered, sel) {
+  return `
+    ${headerHtml(allTrades, filtered, sel)}
 
     <div class="kpi-grid" id="kpis"></div>
 
@@ -221,7 +277,7 @@ function renderShell(allTrades, filtered) {
       <div class="section-title" style="margin:0;">Rendimiento</div>
       <div class="perf-toggle" id="perfToggle"></div>
     </div>
-    <div class="grid-2-1">
+    ${UNIFICADO ? rendimientoUnificadoHtml(sel) : `<div class="grid-2-1">
       <div class="card">
         <div class="card-head">
           <div>
@@ -237,10 +293,12 @@ function renderShell(allTrades, filtered) {
       </div>
       <div class="card">
         <div class="card-title">P&L mensual</div>
-        <div class="card-sub">${monthlyChartYear() ? 'Año ' + monthlyChartYear() : 'Todo el histórico'} · ${perfMode === 'real' ? '% riesgo real' : '% sistema 1R'}</div>
+        <div class="card-sub">${monthlySub(sel)}</div>
         <div class="chart-wrap" style="height:300px;"><canvas id="monthlyChart"></canvas></div>
       </div>
-    </div>
+    </div>`}
+
+    ${UNIFICADO ? detalleHtml(STRATEGIES[SHEETS[0]]) : ''}
 
     ${MULTI_SHEET ? `<div class="section-title">Por estrategia</div>
     <div class="grid-3" id="stratGrid">
@@ -268,7 +326,7 @@ function renderShell(allTrades, filtered) {
       <div id="heatmap" style="margin-top:14px;"></div>
     </div>
 
-    <div class="section-title">${MULTI_SHEET ? 'Dirección y pares' : 'Dirección'}</div>
+    ${UNIFICADO ? '' : `<div class="section-title">${MULTI_SHEET ? 'Dirección y pares' : 'Dirección'}</div>
     <div ${MULTI_SHEET ? 'class="grid-2"' : 'style="margin-bottom:24px;"'}>
       <div class="card">
         <div class="card-title">${MULTI_SHEET ? 'Long vs Short por estrategia' : 'Long vs Short'}</div>
@@ -282,7 +340,7 @@ function renderShell(allTrades, filtered) {
           <th>Par</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th><th>Señal</th>
         </tr></thead><tbody id="pairsTbody"></tbody></table>
       </div>` : ''}
-    </div>
+    </div>`}
 
     <div class="section-title">Rachas y drawdown</div>
     <div class="card table-card" style="margin-bottom:24px;">
@@ -300,7 +358,38 @@ function renderShell(allTrades, filtered) {
         <th>${MULTI_SHEET ? 'Estrategia' : ''}</th><th>Media</th><th>Media TP</th><th>Media SL</th><th>Máxima</th><th>Mínima</th>
       </tr></thead><tbody id="durTbody"></tbody></table>
     </div>
+
+    ${UNIFICADO ? `<div class="section-title">Trades</div>
+    <div id="tradeTable"></div>` : ''}
   `;
+}
+
+// Rendimiento unificado: equity + distribución TP/SL/BE arriba y el mensual
+// a todo el ancho (el reparto de la antigua vista de la estrategia).
+function rendimientoUnificadoHtml(sel) {
+  return `
+    <div class="grid-2-1">
+      <div class="card">
+        <div class="card-title">Curva de equity (P&L acumulado)</div>
+        <div class="card-sub">${perfMode === 'real' ? 'P&L real (riesgo aplicado)' : 'Sistema 1R normalizado'}</div>
+        <div class="chart-wrap" style="height:260px;"><canvas id="equityChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Distribución resultado</div>
+        <div class="card-sub">TP / SL / BE</div>
+        <div class="chart-wrap" style="height:200px;"><canvas id="donut"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-title">P&L mensual</div>
+      <div class="card-sub">${monthlySub(sel)}</div>
+      <div class="chart-wrap" style="height:200px;"><canvas id="monthlyChart"></canvas></div>
+    </div>`;
+}
+
+function monthlySub(sel) {
+  const year = monthlyChartYear(sel);
+  return `${year ? 'Año ' + year : 'Todo el histórico'} · ${perfMode === 'real' ? '% riesgo real' : '% sistema 1R'}`;
 }
 
 function stratCardShell(s) {
@@ -321,7 +410,9 @@ function stratCardShell(s) {
 }
 
 // ── Painters ─────────────────────────────────────────────────
-function paintKpis(container, trades, allTrades) {
+// base: trades con los mismos filtros salvo el de meses — de ahí sale el
+// periodo anterior con el que se compara.
+function paintKpis(container, trades, base, sel) {
   const c = tradeCounts(trades);
   const decisive = c.tp + c.sl;
   const wr = winrate(trades);
@@ -339,7 +430,7 @@ function paintKpis(container, trades, allTrades) {
 
   // Comparación con el periodo anterior (solo si hay un mes/año seleccionado y
   // ese periodo anterior tiene trades: comparar contra cero no dice nada).
-  const prev = allTrades ? prevPeriodTrades(allTrades, dashPeriod) : null;
+  const prev = base ? prevPeriodTrades(base, sel) : null;
   const p = prev && prev.trades.length ? prev : null;
   const tWr   = p ? trend(wr, winrate(p.trades), p.ref) : null;
   const tPnl  = p ? trend(pnl, pnlPct(p.trades), p.ref) : null;
@@ -456,8 +547,8 @@ function openChecklistModal(container) {
 // Año que muestra el gráfico mensual, o null = todo el histórico.
 // Este gráfico NUNCA se estrecha a un mes: con un mes elegido enseña el año
 // entero de ese mes — una sola barra no cuenta nada.
-function monthlyChartYear() {
-  const { from, to } = dashPeriod;
+function monthlyChartYear(sel) {
+  const { from, to } = sel;
   if (from === 'all' && to === 'all') return null;
   const yFrom = from !== 'all' ? from.substring(0, 4) : null;
   const yTo = to !== 'all' ? to.substring(0, 4) : null;
@@ -465,8 +556,8 @@ function monthlyChartYear() {
   return yFrom || yTo;
 }
 
-function paintMonthly(container, allTrades) {
-  const year = monthlyChartYear();
+function paintMonthly(container, allTrades, sel) {
+  const year = monthlyChartYear(sel);
   const scoped = year ? allTrades.filter(t => t.date.startsWith(year)) : allTrades;
   const data = monthlyPnl(scoped);
   // Con varios años a la vista, la etiqueta lleva el año: si no, salen dos

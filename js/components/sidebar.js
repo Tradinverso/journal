@@ -4,7 +4,6 @@ import { state } from '../state.js';
 import { auth } from '../auth.js';
 import { IS_TEST_ENV } from '../firebase.js';
 import { EDITION, SHEETS, MULTI_SHEET } from '../edition.js';
-import { STRATEGIES } from '../utils/strategy-config.js';
 import { storage } from '../storage.js';
 import { tzLabel } from '../utils/timezone.js';
 import { countDangerAlerts } from '../utils/diagnostics.js';
@@ -31,8 +30,8 @@ const NAV_BASE = [
   { path: '#/nuevo',      label: 'Nuevo trade', icon: 'nuevo', class: '' },
   { path: '#/calendario', label: 'Calendario',  icon: 'calendario', class: '' },
   // Las estrategias son un único ítem: dentro se cambia con pestañas. Con una
-  // sola (edición Nasdaq) el ítem lleva su nombre y va directo a ella.
-  { path: STRATEGY_ROUTES[SHEETS[0]], label: MULTI_SHEET ? 'Estrategias' : STRATEGIES[SHEETS[0]].label, icon: 'zonas', class: '', match: STRATEGY_ROUTES_LIST },
+  // sola (edición Nasdaq) no hay ítem: su análisis está en el Dashboard.
+  { path: STRATEGY_ROUTES[SHEETS[0]], label: 'Estrategias', icon: 'zonas', class: '', match: STRATEGY_ROUTES_LIST, hidden: !MULTI_SHEET },
   { section: 'Análisis' },
   // dangerAlerts: badge rojo con el nº de alertas críticas del diagnóstico.
   { path: '#/diagnostico', label: 'Diagnóstico', icon: 'diagnostico', class: '', dangerAlerts: true },

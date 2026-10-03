@@ -11,6 +11,7 @@ decide por la web desde la que se abre:
 | | Completo (`app.tradinverso.com`) | Nasdaq (`journal.tradinverso.com`) |
 |---|---|---|
 | Estrategias | Zonas, Liquidez y Nasdaq | Solo Nasdaq |
+| Dashboard | Global + tarjetas por estrategia; cada estrategia tiene su vista de análisis | Uno solo: el Dashboard incluye el análisis de Nasdaq (filtros por modelo/zona/entrada, tablas, long/short, lista de trades); no hay ítem "Nasdaq" |
 | Cuentas | CFD y Futuros | Solo Futuros |
 | Contabilidad | Sí | No |
 | Psicotrading | Reflexiones, Meditaciones y Protocolos | Reflexiones, Meditación pre-operativa y Protocolos Operativa y Reset del Trader (`meditaciones.js`, `protocolos-fijos.js`) |

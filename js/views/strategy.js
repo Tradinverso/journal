@@ -22,7 +22,9 @@ let perfMode = 'sistema'; // 'sistema' | 'real'
 
 // Filtros de análisis — TODOS arriba y filtrando TODO (KPIs, gráficas y tabla),
 // mismo patrón que Backtesting. Compartidos entre las 3 estrategias; se
-// auto-resetean si el valor no existe en la activa.
+// auto-resetean si el valor no existe en la activa. Con una sola estrategia
+// (edición Nasdaq) esta vista no existe: el Dashboard usa estos mismos filtros
+// y secciones (filtro, filtrosHtml, wireFiltros, detalleHtml, paintDetalle).
 let fPeriod = newPeriod();   // rango de meses { from, to }
 let fPair = 'all', fSetup = 'all', fZone = 'all', fEntry = 'all', fRes = 'all';
 let fModel = 'all';   // modelo de entrada ('' = sin modelo) — solo estrategias con modelos
@@ -31,9 +33,11 @@ function hasIn(v, x) {
   return Array.isArray(v) ? v.includes(x) : v === x;
 }
 
-function filtro(trades) {
+// sinPeriodo: todos los filtros menos el de meses (para comparar con el periodo
+// anterior y para el gráfico mensual, que nunca se estrecha a un mes).
+export function filtro(trades, { sinPeriodo = false } = {}) {
   return trades.filter(t => {
-    if (!inPeriod(t.date, fPeriod)) return false;
+    if (!sinPeriodo && !inPeriod(t.date, fPeriod)) return false;
     if (fPair !== 'all' && t.pair !== fPair) return false;
     if (fSetup !== 'all' && t.setup !== fSetup) return false;
     if (fZone !== 'all' && !hasIn(t.zone, fZone)) return false;
@@ -44,12 +48,19 @@ function filtro(trades) {
   });
 }
 
-function hayFiltros() {
+export function periodoFiltro() { return fPeriod; }
+
+export function resetFiltros() {
+  fPeriod = newPeriod();
+  fPair = fSetup = fZone = fEntry = fRes = fModel = 'all';
+}
+
+export function hayFiltros() {
   return periodActive(fPeriod) || fPair !== 'all'
     || fSetup !== 'all' || fZone !== 'all' || fEntry !== 'all' || fRes !== 'all' || fModel !== 'all';
 }
 
-function filtrosHtml(allSheet) {
+export function filtrosHtml(allSheet) {
   const conModelos = allSheet.some(t => STRAT_META[t.sheet]?.models);
   // "1 · ORB" … "4 · Continuación" y, al final, "Sin modelo" (trades antiguos).
   const models = conModelos
@@ -83,12 +94,13 @@ function filtrosHtml(allSheet) {
     </div>`;
 }
 
-function wireFiltros(container, sheet) {
+// onChange: repintar la vista que use los filtros (esta o el Dashboard).
+export function wireFiltros(container, onChange) {
   const on = (id, fn) => {
     const el = container.querySelector(id);
-    if (el) el.addEventListener('change', () => { fn(el.value); render(container, sheet); });
+    if (el) el.addEventListener('change', () => { fn(el.value); onChange(); });
   };
-  wirePeriod(container, fPeriod, () => render(container, sheet), { idFrom: 'stFromF', idTo: 'stToF' });
+  wirePeriod(container, fPeriod, onChange, { idFrom: 'stFromF', idTo: 'stToF' });
   on('#stPairF', v => { fPair = v; });
   on('#stSetupF', v => { fSetup = v; });
   on('#stZoneF', v => { fZone = v; });
@@ -97,9 +109,8 @@ function wireFiltros(container, sheet) {
   on('#stModelF', v => { fModel = v; });
   const clear = container.querySelector('#stClearF');
   if (clear) clear.addEventListener('click', () => {
-    fPeriod = newPeriod();
-    fPair = fSetup = fZone = fEntry = fRes = fModel = 'all';
-    render(container, sheet);
+    resetFiltros();
+    onChange();
   });
 }
 
@@ -145,7 +156,7 @@ function render(container, sheet) {
         <div class="big">🔍</div>
         <div>Ningún trade de ${meta.label} pasa esos filtros. Ajústalos arriba o límpialos.</div>
       </div>`;
-    wireFiltros(container, sheet);
+    wireFiltros(container, () => render(container, sheet));
     return;
   }
 
@@ -217,47 +228,7 @@ function render(container, sheet) {
       </tr></thead><tbody id="pairsTbody"></tbody></table>
     </div>` : ''}
 
-    <div class="section-title">Por zona</div>
-    <div class="card" style="margin-bottom:24px;">
-      <div class="card-title">Rendimiento por zona</div>
-      <table class="data-table"><thead><tr>
-        <th>Zona</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th>
-      </tr></thead><tbody id="zonesTbody"></tbody></table>
-    </div>
-
-    ${meta.entries ? `
-    <div class="section-title">Por tipo de entrada</div>
-    <div class="card" style="margin-bottom:24px;">
-      <div class="card-title">Rendimiento por entrada</div>
-      <table class="data-table"><thead><tr>
-        <th>Entrada</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th>
-      </tr></thead><tbody id="entriesTbody"></tbody></table>
-    </div>` : ''}
-
-    ${meta.models ? `
-    <div class="section-title">Por modelo de entrada</div>
-    <div class="card" style="margin-bottom:24px;">
-      <div class="card-title">Rendimiento por modelo</div>
-      <table class="data-table"><thead><tr>
-        <th>Modelo</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th>
-      </tr></thead><tbody id="modelsTbody"></tbody></table>
-    </div>` : ''}
-
-    <div class="section-title">Long vs Short</div>
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-title">Por dirección</div>
-        <div class="card-sub">Winrate Long vs Short</div>
-        <div class="chart-wrap" style="height:200px;"><canvas id="lsChart"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="card-title">Detalle</div>
-        <div class="card-sub">Métricas por dirección</div>
-        <table class="data-table"><thead><tr>
-          <th>Dirección</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th>
-        </tr></thead><tbody id="lsTbody"></tbody></table>
-      </div>
-    </div>
+    ${detalleHtml(meta)}
 
     <div class="section-title">Timing</div>
     <div class="grid-2">
@@ -292,7 +263,7 @@ function render(container, sheet) {
     <div id="tradeTable"></div>
   `;
 
-  wireFiltros(container, sheet);
+  wireFiltros(container, () => render(container, sheet));
 
   // Toggle Sistema/Real
   const perfToggleEl = container.querySelector('#perfToggle');
@@ -341,6 +312,74 @@ function render(container, sheet) {
     }).join('');
   }
 
+  paintDetalle(container, all, meta);
+
+  // Duration
+  const d = durationStats(all);
+  container.querySelector('#durTbody').innerHTML = `
+    <tr>
+      <td><span class="strat-pill ${meta.cls}">${meta.label}</span></td>
+      <td>${d.avg} min</td>
+      <td style="color:var(--green)">${d.tp} min</td>
+      <td style="color:var(--red)">${d.sl} min</td>
+      <td>${d.max} min</td>
+      <td>${d.min} min</td>
+    </tr>
+  `;
+
+  // Trade table
+  renderTradeTable(container.querySelector('#tradeTable'), all, { canDelete: true });
+}
+
+// Secciones por zona, tipo de entrada, modelo y long/short de una estrategia.
+// Las usan esta vista y el Dashboard de la edición Nasdaq.
+export function detalleHtml(meta) {
+  return `
+    <div class="section-title">Por zona</div>
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-title">Rendimiento por zona</div>
+      <table class="data-table"><thead><tr>
+        <th>Zona</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th>
+      </tr></thead><tbody id="zonesTbody"></tbody></table>
+    </div>
+
+    ${meta.entries ? `
+    <div class="section-title">Por tipo de entrada</div>
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-title">Rendimiento por entrada</div>
+      <table class="data-table"><thead><tr>
+        <th>Entrada</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th>
+      </tr></thead><tbody id="entriesTbody"></tbody></table>
+    </div>` : ''}
+
+    ${meta.models ? `
+    <div class="section-title">Por modelo de entrada</div>
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-title">Rendimiento por modelo</div>
+      <table class="data-table"><thead><tr>
+        <th>Modelo</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th><th>PF</th>
+      </tr></thead><tbody id="modelsTbody"></tbody></table>
+    </div>` : ''}
+
+    <div class="section-title">Long vs Short</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Por dirección</div>
+        <div class="card-sub">Winrate Long vs Short</div>
+        <div class="chart-wrap" style="height:200px;"><canvas id="lsChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Detalle</div>
+        <div class="card-sub">Métricas por dirección</div>
+        <table class="data-table"><thead><tr>
+          <th>Dirección</th><th>Trades</th><th>WR</th><th>P&L sist.</th><th>P&L real</th>
+        </tr></thead><tbody id="lsTbody"></tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+export function paintDetalle(container, all, meta) {
   // Zones (cuenta por la PRIMARIA — la primera del array si hay varias)
   const zs = statsByGroup(all, t => (Array.isArray(t.zone) ? t.zone[0] : t.zone) || '–').sort((a, b) => b.total - a.total);
   container.querySelector('#zonesTbody').innerHTML = zs.map(z => tableRow([
@@ -381,22 +420,6 @@ function render(container, sheet) {
     const x = ls[d];
     return tableRow([d.toUpperCase(), x.n, coloredPct(x.wr, 50), coloredSignedPct(x.pnl), coloredSignedPct(lsReal[d])]);
   }).join('');
-
-  // Duration
-  const d = durationStats(all);
-  container.querySelector('#durTbody').innerHTML = `
-    <tr>
-      <td><span class="strat-pill ${meta.cls}">${meta.label}</span></td>
-      <td>${d.avg} min</td>
-      <td style="color:var(--green)">${d.tp} min</td>
-      <td style="color:var(--red)">${d.sl} min</td>
-      <td>${d.max} min</td>
-      <td>${d.min} min</td>
-    </tr>
-  `;
-
-  // Trade table
-  renderTradeTable(container.querySelector('#tradeTable'), all, { canDelete: true });
 }
 
 function tableRow(cells) {

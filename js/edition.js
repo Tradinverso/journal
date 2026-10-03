@@ -85,6 +85,8 @@ const SHEET_ROUTES = {
 };
 export const HIDDEN_ROUTES = new Set([
   ...Object.keys(SHEET_ROUTES).filter(s => !hasSheet(s)).flatMap(s => SHEET_ROUTES[s]),
+  // Con una sola estrategia su análisis va dentro del Dashboard (dashboard.js).
+  ...(MULTI_SHEET ? [] : SHEETS.map(s => SHEET_ROUTES[s][0])),
   ...(EDITION.contabilidad ? [] : ['#/contabilidad']),
   ...(EDITION.meditaciones ? [] : ['#/meditaciones']),
 ]);
