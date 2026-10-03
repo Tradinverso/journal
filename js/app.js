@@ -8,6 +8,7 @@ import { theme } from './theme.js';
 import { router } from './router.js';
 import { renderSidebar } from './components/sidebar.js';
 import { maybeShowMigrationPrompt } from './components/migrate-modal.js';
+import { principalUser, loadPrincipalData } from './utils/principal-sync.js';
 
 import { dashboardView } from './views/dashboard.js';
 import { newTradeView } from './views/new-trade.js';
@@ -123,6 +124,7 @@ auth.on(async () => {
     await state.loadFromCloud();
     // Después de cargar, ofrece migrar localStorage si hay datos
     maybeShowMigrationPrompt();
+    autoSyncPrincipal();
   }
 
   renderSidebar(sidebar);
@@ -138,6 +140,31 @@ auth.on(async () => {
 });
 
 auth.init();
+
+// ── App Nasdaq: traer solo los trades del panel principal ────
+// El admin no tiene que pulsar "Traer ahora" cada vez: al abrir la app (y al
+// volver a ella) se ponen al día solos, como mucho cada 10 minutos. Solo si
+// este navegador ya está conectado al principal (se conecta una vez en
+// Ajustes → Importar → Desde el panel principal); si no, no hace nada.
+const AUTO_SYNC_MS = 10 * 60 * 1000;
+let autoSyncing = false;
+async function autoSyncPrincipal() {
+  if (!IS_NASDAQ || !auth.isAdmin() || state.viewAsUid || autoSyncing) return;
+  const last = state.config && state.config.principalSync && state.config.principalSync.at;
+  if (last && Date.now() - last < AUTO_SYNC_MS) return;
+  autoSyncing = true;
+  try {
+    if (!(await principalUser())) return;
+    await state.syncFromPrincipal(await loadPrincipalData());
+  } catch (e) {
+    console.warn('Traer del principal (automático):', e);
+  } finally {
+    autoSyncing = false;
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && auth.currentUser) autoSyncPrincipal();
+});
 
 // ── PWA: registrar service worker (habilita "Instalar app") ──
 // Ruta relativa para que funcione bajo cualquier subcarpeta (p. ej. /panelprueba/).

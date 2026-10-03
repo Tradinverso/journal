@@ -311,7 +311,7 @@ async function paintPrincipalTab(container) {
     <div class="card-title">Traer mis trades de Nasdaq del panel principal</div>
     <div class="card-sub" style="line-height:1.6;">
       Copia aquí tus trades de <b>Nasdaq</b> y tus <b>cuentas de futuros</b> de app.tradinverso.com.
-      Púlsalo cuando quieras ponerla al día: añade lo nuevo, actualiza lo que hayas cambiado allí y quita lo que hayas borrado allí.
+      Se pone al día <b>sola</b> cada vez que abres esta app en un navegador conectado al principal (como mucho cada 10 minutos), y también con «Traer ahora»: añade lo nuevo, actualiza lo que hayas cambiado allí y quita lo que hayas borrado allí.
       Lo que registres directamente en esta app no se toca, y el panel principal <b>solo se lee</b>.
       ${last ? `<br>Última vez: <b>${new Date(last).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' })}</b>.` : ''}
     </div>`;
