@@ -20,8 +20,11 @@ const EDITIONS = {
     sheets: ['ZONAS', 'LIQUIDEZ', 'NASDAQ'],
     cuentaTipos: ['CFD', 'Futuros'],
     // Contabilidad: true = la vista real; 'candado' = en el menú con candado y
-    // solo una captura desenfocada (views/contabilidad-candado.js); false = fuera.
+    // solo una captura desenfocada (views/vista-candado.js); false = fuera.
     contabilidad: true,
+    // Ítem "Estrategias" con candado cuando la edición tiene una sola estrategia
+    // (vista-candado.js); la completa tiene la sección real.
+    estrategiasCandado: false,
     meditaciones: true,
     // Logo grande (login, pantalla de carga), favicons de la pestaña y, si la
     // edición tiene marca propia, la imagen pequeña del menú (sin ella, el globo).
@@ -40,7 +43,7 @@ const EDITIONS = {
     sheets: ['NASDAQ'],
     cuentaTipos: ['Futuros'],
     contabilidad: 'candado',
-    contabilidadPreview: 'assets/nasdaq/contabilidad-preview.jpg',
+    estrategiasCandado: true,
     meditaciones: true,   // solo la pre-operativa abierta (meditaciones.js)
     logo: 'assets/nasdaq/logo.png',
     favicons: { 32: 'assets/nasdaq/favicon-32.png', 192: 'assets/nasdaq/favicon-192.png' },
@@ -97,5 +100,6 @@ export const HIDDEN_ROUTES = new Set([
   // Con una sola estrategia su análisis va dentro del Dashboard (dashboard.js).
   ...(MULTI_SHEET ? [] : SHEETS.map(s => SHEET_ROUTES[s][0])),
   ...(EDITION.contabilidad === false ? ['#/contabilidad'] : []),
+  ...(EDITION.estrategiasCandado ? [] : ['#/estrategias']),
   ...(EDITION.meditaciones ? [] : ['#/meditaciones']),
 ]);

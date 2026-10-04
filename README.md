@@ -10,7 +10,7 @@ decide por la web desde la que se abre:
 
 | | Completo (`app.tradinverso.com`) | Nasdaq (`journal.tradinverso.com`) |
 |---|---|---|
-| Estrategias | Zonas, Liquidez y Nasdaq | Solo Nasdaq |
+| Estrategias | Zonas, Liquidez y Nasdaq | Solo Nasdaq (su análisis está en el Dashboard). El ítem «Estrategias» lleva a una captura desenfocada del Método C3 con candado |
 | Dashboard | Global + tarjetas por estrategia; cada estrategia tiene su vista de análisis | Uno solo: el Dashboard incluye el análisis de Nasdaq (filtros por modelo/zona/entrada, tablas, long/short, lista de trades); no hay ítem "Nasdaq" |
 | Cuentas | CFD y Futuros | Solo Futuros |
 | Contabilidad | Sí | En el menú con 🔒: solo una captura desenfocada (con datos de ejemplo) y el aviso del programa completo |

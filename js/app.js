@@ -30,7 +30,7 @@ import { tradingPlanView } from './views/plan.js';
 import { protocolosView } from './views/protocolos.js';
 import { meditacionesView } from './views/meditaciones.js';
 import { contabilidadView } from './views/contabilidad.js';
-import { contabilidadCandadoView } from './views/contabilidad-candado.js';
+import { vistaCandado } from './views/vista-candado.js';
 import { backtestView } from './views/backtest.js';
 import { backtestImportView } from './views/backtest-import.js';
 
@@ -89,7 +89,9 @@ router
   .add('#/riesgo',      (_, c) => riesgoView(c, 'CFD'))
   .add('#/riesgo-futuros', (_, c) => riesgoView(c, 'Futuros'))
   .add('#/plan',        (_, c) => tradingPlanView(c))
-  .add('#/contabilidad', (_, c) => EDITION.contabilidad === 'candado' ? contabilidadCandadoView(c) : contabilidadView(c))
+  .add('#/contabilidad', (_, c) => EDITION.contabilidad === 'candado' ? vistaCandado(c, 'contabilidad') : contabilidadView(c))
+  // Solo en la edición Nasdaq: las otras estrategias, con candado (vista-candado.js).
+  .add('#/estrategias', (_, c) => vistaCandado(c, 'estrategias'))
   .add('#/bt-zonas',    (_, c) => backtestView(c, 'ZONAS'))
   .add('#/bt-liquidez', (_, c) => backtestView(c, 'LIQUIDEZ'))
   .add('#/bt-nasdaq',   (_, c) => backtestView(c, 'NASDAQ'))

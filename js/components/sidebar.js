@@ -30,8 +30,11 @@ const NAV_BASE = [
   { path: '#/nuevo',      label: 'Nuevo trade', icon: 'nuevo', class: '' },
   { path: '#/calendario', label: 'Calendario',  icon: 'calendario', class: '' },
   // Las estrategias son un único ítem: dentro se cambia con pestañas. Con una
-  // sola (edición Nasdaq) no hay ítem: su análisis está en el Dashboard.
-  { path: STRATEGY_ROUTES[SHEETS[0]], label: 'Estrategias', icon: 'zonas', class: '', match: STRATEGY_ROUTES_LIST, hidden: !MULTI_SHEET },
+  // sola (edición Nasdaq) su análisis está en el Dashboard y el ítem lleva a
+  // las otras, con candado (vista-candado.js).
+  MULTI_SHEET
+    ? { path: STRATEGY_ROUTES[SHEETS[0]], label: 'Estrategias', icon: 'zonas', class: '', match: STRATEGY_ROUTES_LIST }
+    : { path: '#/estrategias', label: 'Estrategias', icon: 'zonas', class: '', locked: true, hidden: !EDITION.estrategiasCandado },
   { section: 'Análisis' },
   // dangerAlerts: badge rojo con el nº de alertas críticas del diagnóstico.
   { path: '#/diagnostico', label: 'Diagnóstico', icon: 'diagnostico', class: '', dangerAlerts: true },
