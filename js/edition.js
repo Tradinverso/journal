@@ -2,8 +2,8 @@
 //   - 'completo' (app.tradinverso.com): las tres estrategias, cuentas CFD y de
 //     futuros, Contabilidad y Psicotrading entero.
 //   - 'nasdaq' (journal.tradinverso.com): solo la estrategia Nasdaq, solo
-//     cuentas de futuros, sin Contabilidad, y con sus propias listas de
-//     protocolos fijos y meditaciones (protocolos-fijos.js, meditaciones.js).
+//     cuentas de futuros, Contabilidad con candado, y con sus propias listas
+//     de protocolos fijos y meditaciones (protocolos-fijos.js, meditaciones.js).
 // La edición la decide la web desde la que se abre, igual que el proyecto de
 // Firebase (firebase.js). Fuera de esas dos webs (servidor local) se puede
 // elegir con ?edicion=nasdaq o ?edicion=completo; queda recordada en ese
@@ -19,6 +19,8 @@ const EDITIONS = {
     version: 'v.2.5',
     sheets: ['ZONAS', 'LIQUIDEZ', 'NASDAQ'],
     cuentaTipos: ['CFD', 'Futuros'],
+    // Contabilidad: true = la vista real; 'candado' = en el menú con candado y
+    // solo una captura desenfocada (views/contabilidad-candado.js); false = fuera.
     contabilidad: true,
     meditaciones: true,
     // Logo grande (login, pantalla de carga), favicons de la pestaña y, si la
@@ -37,8 +39,9 @@ const EDITIONS = {
     version: 'v.1.0',
     sheets: ['NASDAQ'],
     cuentaTipos: ['Futuros'],
-    contabilidad: false,
-    meditaciones: true,   // solo la pre-operativa (meditaciones.js)
+    contabilidad: 'candado',
+    contabilidadPreview: 'assets/nasdaq/contabilidad-preview.jpg',
+    meditaciones: true,   // solo la pre-operativa abierta (meditaciones.js)
     logo: 'assets/nasdaq/logo.png',
     favicons: { 32: 'assets/nasdaq/favicon-32.png', 192: 'assets/nasdaq/favicon-192.png' },
     appleIcon: 'assets/nasdaq/icon-192.png',
@@ -93,6 +96,6 @@ export const HIDDEN_ROUTES = new Set([
   ...Object.keys(SHEET_ROUTES).filter(s => !hasSheet(s)).flatMap(s => SHEET_ROUTES[s]),
   // Con una sola estrategia su análisis va dentro del Dashboard (dashboard.js).
   ...(MULTI_SHEET ? [] : SHEETS.map(s => SHEET_ROUTES[s][0])),
-  ...(EDITION.contabilidad ? [] : ['#/contabilidad']),
+  ...(EDITION.contabilidad === false ? ['#/contabilidad'] : []),
   ...(EDITION.meditaciones ? [] : ['#/meditaciones']),
 ]);

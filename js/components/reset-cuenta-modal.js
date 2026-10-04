@@ -33,7 +33,7 @@ export function openResetCuentaModal(cuenta, onDone = () => {}) {
           <div class="form-field">
             <label class="form-label">Coste del reset ($)</label>
             <input class="form-input" type="number" step="1" min="0" id="rs-cost" placeholder="0">
-            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px;">Déjalo vacío o en 0 si fue gratis.${EDITION.contabilidad ? ' Si costó, sale en Contabilidad.' : ''}</div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px;">Déjalo vacío o en 0 si fue gratis.${EDITION.contabilidad === true ? ' Si costó, sale en Contabilidad.' : ''}</div>
           </div>
           <div class="form-field">
             <label class="form-label">Fecha</label>

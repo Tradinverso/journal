@@ -120,14 +120,14 @@ export function openCuentaEditModal(cuenta = null, onSaved = () => {}, opts = {}
           <div class="form-field">
             <label class="form-label">${isNew ? 'Coste pagado ($)' : 'Primera compra · coste ($)'}</label>
             <input class="form-input" type="number" step="1" id="ce-cost" value="${esc(data.cost)}" placeholder="99">
-            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px;">${isNew ? `Se registra como la primera compra de la cuenta${EDITION.contabilidad ? ' (Contabilidad)' : ''}.` : 'Edita el coste inicial (primera compra).'}</div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px;">${isNew ? `Se registra como la primera compra de la cuenta${EDITION.contabilidad === true ? ' (Contabilidad)' : ''}.` : 'Edita el coste inicial (primera compra).'}</div>
           </div>
         </div>
         <div class="form-row ce-prop-only">
           <div class="form-field">
             <label class="form-label">${isNew ? 'Fecha del pago' : 'Fecha de la primera compra'}</label>
             <input class="form-input" type="date" id="ce-cost-date" value="${esc(data.costDate)}">
-            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px;">${isNew ? `Fecha de esa primera compra.${EDITION.contabilidad ? ' Editable luego en Contabilidad → Compras.' : ''}` : 'Cambia la fecha en la que compraste la cuenta.'}</div>
+            <div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:4px;">${isNew ? `Fecha de esa primera compra.${EDITION.contabilidad === true ? ' Editable luego en Contabilidad → Compras.' : ''}` : 'Cambia la fecha en la que compraste la cuenta.'}</div>
           </div>
           <div class="form-field"></div>
         </div>

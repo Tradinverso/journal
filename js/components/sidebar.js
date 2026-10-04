@@ -43,7 +43,7 @@ const NAV_BASE = [
   { section: 'Gestión' },
   // Cuentas agrupa Cuentas + Riesgo (pestañas). Contabilidad va aparte.
   { path: '#/cuentas',      label: 'Cuentas',      icon: 'cuentas', class: '', countActiveCuentas: true, match: ['#/cuentas', '#/riesgo', '#/riesgo-futuros'] },
-  { path: '#/contabilidad', label: 'Contabilidad', icon: 'contabilidad', class: '', hidden: !EDITION.contabilidad },
+  { path: '#/contabilidad', label: 'Contabilidad', icon: 'contabilidad', class: '', hidden: EDITION.contabilidad === false, locked: EDITION.contabilidad === 'candado' },
   // Ajustes (engloba Importar y Tabla como pestañas) se renderiza aparte, en el pie.
 ];
 
@@ -157,6 +157,8 @@ export function renderSidebar(container) {
         } else if (item.countActiveCuentas) {
           const n = state.cuentas.filter(c => c.status === 'activa').length;
           meta = n ? `<span class="nav-meta">${n}</span>` : '';
+        } else if (item.locked) {
+          meta = '<span class="nav-meta" title="Disponible en el programa completo">🔒</span>';
         } else if (item.dangerAlerts) {
           const n = countDangerAlerts(state.trades);
           meta = n ? `<span class="nav-meta danger" title="${n} alerta${n > 1 ? 's' : ''} crítica${n > 1 ? 's' : ''}">${n}</span>` : '';

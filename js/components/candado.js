@@ -12,20 +12,24 @@ function esc(s) {
   ));
 }
 
-// origen: de dónde viene el clic, para el utm_campaign del enlace (si lo hay).
+export const CANDADO_MENSAJE = `
+  Esto forma parte del <strong>programa completo de Tradinverso</strong>.
+  <br><br>
+  Si quieres avanzar y llevar tu trading al siguiente nivel,
+  <strong>contacta con el equipo</strong> para acceder.`;
+
+// Enlace del candado (o null). origen: de dónde viene el clic, para el
+// utm_campaign.
+export function candadoUrl(origen = '') {
+  if (!EDITION.upgradeUrl) return null;
+  return EDITION.upgradeUrl + (origen ? `${EDITION.upgradeUrl.includes('?') ? '&' : '?'}utm_campaign=${encodeURIComponent(origen)}` : '');
+}
+
 export function abrirCandado(titulo, origen = '') {
-  const url = EDITION.upgradeUrl
-    ? EDITION.upgradeUrl + (origen ? `${EDITION.upgradeUrl.includes('?') ? '&' : '?'}utm_campaign=${encodeURIComponent(origen)}` : '')
-    : null;
+  const url = candadoUrl(origen);
   openModal({
     title: `🔒 ${esc(titulo)}`,
-    body: `
-      <div style="line-height:1.7;">
-        Esto forma parte del <strong>programa completo de Tradinverso</strong>.
-        <br><br>
-        Si quieres avanzar y llevar tu trading al siguiente nivel,
-        <strong>contacta con el equipo</strong> para acceder.
-      </div>`,
+    body: `<div style="line-height:1.7;">${CANDADO_MENSAJE}</div>`,
     actions: url
       ? [
           { label: 'Ahora no', onClick: close => close() },
