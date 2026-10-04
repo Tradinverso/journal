@@ -27,6 +27,9 @@ const EDITIONS = {
     favicons: { 32: 'assets/favicon-tab-32.png', 192: 'assets/favicon-tab-192.png' },
     appleIcon: 'assets/icon-192.png',
     marca: null,
+    // A dónde llevan los candados (lo que es del programa completo). La
+    // completa no tiene candados.
+    upgradeUrl: null,
   },
   nasdaq: {
     id: 'nasdaq',
@@ -40,6 +43,9 @@ const EDITIONS = {
     favicons: { 32: 'assets/nasdaq/favicon-32.png', 192: 'assets/nasdaq/favicon-192.png' },
     appleIcon: 'assets/nasdaq/icon-192.png',
     marca: 'assets/nasdaq/marca.png',
+    // Sin enlace: el candado solo pide contactar con el equipo (decisión de
+    // David). Si se pone una URL, el aviso del candado añade un botón a ella.
+    upgradeUrl: null,
   },
 };
 

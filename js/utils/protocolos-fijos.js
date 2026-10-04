@@ -17,8 +17,11 @@ const COMPLETO = [
   { titulo: 'Reset del Trader', desc: 'Protocolo para resetear tu mente tras una racha.', url: 'https://drive.google.com/file/d/1RFGUa_w4BZu4z5q14NsTmkHPu4tcHW-L/view' },
 ];
 
-// Edición Nasdaq: solo la Operativa y el Reset del Trader (decisión de David).
-const NASDAQ_TITULOS = ['Protocolo Operativa', 'Reset del Trader'];
-const NASDAQ = COMPLETO.filter(p => NASDAQ_TITULOS.includes(p.titulo));
+// Edición Nasdaq: se ven los cuatro, pero solo la Operativa está abierta; el
+// resto sale con candado hacia el programa completo y sin su enlace.
+const NASDAQ_ABIERTOS = ['Protocolo Operativa'];
+const NASDAQ = COMPLETO.map(p => NASDAQ_ABIERTOS.includes(p.titulo)
+  ? p
+  : { titulo: p.titulo, desc: p.desc, bloqueado: true });
 
 export const PROTOCOLOS_FIJOS = IS_NASDAQ ? NASDAQ : COMPLETO;

@@ -12,6 +12,7 @@ import { psicotradingTabs } from '../components/psicotrading-tabs.js';
 import { PROTOCOLOS_FIJOS } from '../utils/protocolos-fijos.js';
 import { openModal } from '../components/modal.js';
 import { attachDictation } from '../utils/dictation.js';
+import { EDITION } from '../edition.js';
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
@@ -33,6 +34,41 @@ function fijoCard(p) {
     </a>`;
 }
 
+// Tarjeta de un protocolo con CANDADO (edición Nasdaq): es del programa
+// completo. No lleva enlace al documento; al pulsarla se explica cómo acceder
+// (y, si EDITION.upgradeUrl tiene enlace, un botón a él).
+function bloqueadoCard(p, i) {
+  return `
+    <button type="button" class="card plan-doc-cta" data-bloqueado="${i}" style="width:100%;text-align:left;cursor:pointer;opacity:.8;font:inherit;color:inherit;">
+      <span class="pd-icon">🔒</span>
+      <span class="pd-text">
+        <strong>${esc(p.titulo || 'Protocolo')}</strong>
+        <small>${esc(p.desc || '')} · Disponible en el programa completo</small>
+      </span>
+      <span class="pd-arrow">›</span>
+    </button>`;
+}
+
+function abrirBloqueado(p) {
+  const url = EDITION.upgradeUrl;
+  openModal({
+    title: `🔒 ${esc(p.titulo || 'Protocolo')}`,
+    body: `
+      <div style="line-height:1.7;">
+        Esto forma parte del <strong>programa completo de Tradinverso</strong>.
+        <br><br>
+        Si quieres avanzar y llevar tu trading al siguiente nivel,
+        <strong>contacta con el equipo</strong> para acceder.
+      </div>`,
+    actions: url
+      ? [
+          { label: 'Ahora no', onClick: close => close() },
+          { label: 'Quiero acceder', variant: 'primary', onClick: close => { window.open(url, '_blank', 'noopener'); close(); } },
+        ]
+      : [{ label: 'Entendido', variant: 'primary', onClick: close => close() }],
+  });
+}
+
 // Tarjeta de un protocolo PROPIO del alumno: título, contenido, enlace, acciones.
 function propioCard(p) {
   const hasContent = !!(p.content && p.content.trim());
@@ -51,12 +87,12 @@ function propioCard(p) {
 }
 
 function render(container) {
-  const fijos = Array.isArray(PROTOCOLOS_FIJOS) ? PROTOCOLOS_FIJOS.filter(p => p && p.url) : [];
+  const fijos = Array.isArray(PROTOCOLOS_FIJOS) ? PROTOCOLOS_FIJOS.filter(p => p && (p.url || p.bloqueado)) : [];
   const propios = (state.tradingPlan && Array.isArray(state.tradingPlan.protocolos)) ? state.tradingPlan.protocolos : [];
 
   const fijosBlock = fijos.length ? `
     <div class="section-title">Protocolos de Tradinverso</div>
-    <div class="medita-list" style="margin-bottom:26px;">${fijos.map(fijoCard).join('')}</div>` : '';
+    <div class="medita-list" style="margin-bottom:26px;">${fijos.map((p, i) => p.bloqueado ? bloqueadoCard(p, i) : fijoCard(p)).join('')}</div>` : '';
 
   const propiosBlock = `
     <div class="section-title-row">
@@ -84,6 +120,8 @@ function render(container) {
     ${propiosBlock}
   `;
 
+  container.querySelectorAll('[data-bloqueado]').forEach(b =>
+    b.addEventListener('click', () => abrirBloqueado(fijos[+b.dataset.bloqueado])));
   const newBtn = container.querySelector('#protoNew');
   if (newBtn) newBtn.addEventListener('click', () => openEditor(null));
   container.querySelectorAll('[data-edit]').forEach(b =>
