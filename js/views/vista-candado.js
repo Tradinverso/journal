@@ -13,7 +13,7 @@ const VISTAS = {
   },
   estrategias: {
     titulo: 'Estrategias · Método C3',
-    desc: 'Aquí está toda la operativa del Método C3 con sus 3 estrategias: Zonas (Forex y oro), Liquidez (EUR/USD y GBP/USD) y Nasdaq, cada una con su análisis y su backtesting.',
+    desc: 'Aquí está toda la operativa del Método C3 con sus 3 estrategias: Zonas (Forex y oro), Liquidez (EUR/USD) y Nasdaq, cada una con su análisis y su backtesting.',
     imagen: 'assets/nasdaq/estrategias-preview.jpg',
   },
 };
