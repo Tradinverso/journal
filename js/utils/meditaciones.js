@@ -5,8 +5,9 @@
 //
 // Campos: { titulo, autor, desc, src }  · `src` = ruta relativa al MP3.
 //
-// Cada edición (edition.js) tiene su lista: la Nasdaq solo lleva la
-// pre-operativa de David (y su repo solo tiene ese MP3).
+// Cada edición (edition.js) tiene su lista: en la Nasdaq se ven las tres, pero
+// solo la pre-operativa de David se puede escuchar (y es el único MP3 de su
+// repo); el resto sale con candado hacia el programa completo, sin audio.
 
 import { IS_NASDAQ } from '../edition.js';
 
@@ -31,6 +32,9 @@ const COMPLETO = [
   },
 ];
 
-const NASDAQ = COMPLETO.filter(m => m.src === 'assets/audio/meditacion-pre-operativa.mp3');
+const NASDAQ_ABIERTAS = ['assets/audio/meditacion-pre-operativa.mp3'];
+const NASDAQ = COMPLETO.map(m => NASDAQ_ABIERTAS.includes(m.src)
+  ? m
+  : { titulo: m.titulo, autor: m.autor, desc: m.desc, bloqueado: true });
 
 export const MEDITACIONES = IS_NASDAQ ? NASDAQ : COMPLETO;

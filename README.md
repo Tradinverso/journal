@@ -14,7 +14,7 @@ decide por la web desde la que se abre:
 | Dashboard | Global + tarjetas por estrategia; cada estrategia tiene su vista de análisis | Uno solo: el Dashboard incluye el análisis de Nasdaq (filtros por modelo/zona/entrada, tablas, long/short, lista de trades); no hay ítem "Nasdaq" |
 | Cuentas | CFD y Futuros | Solo Futuros |
 | Contabilidad | Sí | No |
-| Psicotrading | Reflexiones, Meditaciones y Protocolos | Reflexiones, Meditación pre-operativa y los 4 protocolos: solo Operativa abierto, el resto con candado «programa completo» (`meditaciones.js`, `protocolos-fijos.js`, `EDITION.upgradeUrl`) |
+| Psicotrading | Reflexiones, Meditaciones y Protocolos | Reflexiones, las 3 meditaciones y los 4 protocolos a la vista; abiertos solo la Meditación pre-operativa y el Protocolo Operativa, el resto con candado «programa completo» (`meditaciones.js`, `protocolos-fijos.js`, `components/candado.js`) |
 | Logo e iconos | `assets/` | `assets/nasdaq/` |
 
 En local (`localhost`), la edición se elige con `?edicion=nasdaq` o

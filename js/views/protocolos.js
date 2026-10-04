@@ -12,7 +12,7 @@ import { psicotradingTabs } from '../components/psicotrading-tabs.js';
 import { PROTOCOLOS_FIJOS } from '../utils/protocolos-fijos.js';
 import { openModal } from '../components/modal.js';
 import { attachDictation } from '../utils/dictation.js';
-import { EDITION } from '../edition.js';
+import { abrirCandado } from '../components/candado.js';
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
@@ -36,7 +36,7 @@ function fijoCard(p) {
 
 // Tarjeta de un protocolo con CANDADO (edición Nasdaq): es del programa
 // completo. No lleva enlace al documento; al pulsarla se explica cómo acceder
-// (y, si EDITION.upgradeUrl tiene enlace, un botón a él).
+// (components/candado.js).
 function bloqueadoCard(p, i) {
   return `
     <button type="button" class="card plan-doc-cta" data-bloqueado="${i}" style="width:100%;text-align:left;cursor:pointer;opacity:.8;font:inherit;color:inherit;">
@@ -47,26 +47,6 @@ function bloqueadoCard(p, i) {
       </span>
       <span class="pd-arrow">›</span>
     </button>`;
-}
-
-function abrirBloqueado(p) {
-  const url = EDITION.upgradeUrl;
-  openModal({
-    title: `🔒 ${esc(p.titulo || 'Protocolo')}`,
-    body: `
-      <div style="line-height:1.7;">
-        Esto forma parte del <strong>programa completo de Tradinverso</strong>.
-        <br><br>
-        Si quieres avanzar y llevar tu trading al siguiente nivel,
-        <strong>contacta con el equipo</strong> para acceder.
-      </div>`,
-    actions: url
-      ? [
-          { label: 'Ahora no', onClick: close => close() },
-          { label: 'Quiero acceder', variant: 'primary', onClick: close => { window.open(url, '_blank', 'noopener'); close(); } },
-        ]
-      : [{ label: 'Entendido', variant: 'primary', onClick: close => close() }],
-  });
 }
 
 // Tarjeta de un protocolo PROPIO del alumno: título, contenido, enlace, acciones.
@@ -121,7 +101,7 @@ function render(container) {
   `;
 
   container.querySelectorAll('[data-bloqueado]').forEach(b =>
-    b.addEventListener('click', () => abrirBloqueado(fijos[+b.dataset.bloqueado])));
+    b.addEventListener('click', () => abrirCandado(fijos[+b.dataset.bloqueado].titulo, 'protocolos')));
   const newBtn = container.querySelector('#protoNew');
   if (newBtn) newBtn.addEventListener('click', () => openEditor(null));
   container.querySelectorAll('[data-edit]').forEach(b =>
