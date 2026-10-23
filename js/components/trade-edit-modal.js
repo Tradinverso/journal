@@ -9,6 +9,7 @@ import { renderCuentaAssign } from './cuenta-assign.js';
 import { TODAS as SENS_OPTIONS } from '../utils/sensaciones.js';
 import { parseTime, durationMinutes, hourToString } from '../utils/date-helpers.js';
 import { STRATEGIES } from '../utils/strategy-config.js';
+import { attachDictation } from '../utils/dictation.js';
 
 export function openEditTradeModal(trade) {
   const meta = STRATEGIES[trade.sheet];
@@ -148,7 +149,7 @@ export function openEditTradeModal(trade) {
 
         <div class="form-field">
           <label class="form-label">Reflexión</label>
-          <textarea class="form-textarea" data-input="reflexion">${escapeHtml(data.reflexion)}</textarea>
+          <div><textarea class="form-textarea" data-input="reflexion">${escapeHtml(data.reflexion)}</textarea></div>
         </div>
 
         <div class="form-field">
@@ -253,6 +254,7 @@ export function openEditTradeModal(trade) {
         data[el.dataset.input] = el.value;
       });
     });
+    attachDictation(root.querySelector('[data-input="reflexion"]'));
 
     // Asignación de cuentas
     const assignBox = root.querySelector('#cuentaAssignBoxEdit');
